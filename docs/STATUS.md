@@ -10,7 +10,7 @@
 | T03 퀴즈 쉘·설정·홈 쉘 | DONE(PC Chrome headless 기준) | dc0fe78 | UI 20 PASS(3 뷰포트×4 글자크기). Android 실기기 미확인 |
 | T04 로컬 저장·outbox·백업 | DONE(Mock 포함, 실제 Sheets 아님) | 2e9b61b | 단위 19 + 브라우저 4 PASS. 백업→복원 중복 0 |
 | T05 콘텐츠 CLI 최소판 | DONE | 16700f3 | 시드 팩 45항목 전부 VERIFIED(생성 claude-sonnet-5-5 ≠ 검증 claude-opus-5-5, headless, 모델명 resolved). 테스트 125 PASS |
-| T06 진단·목표·플랜 | DONE(PC Chrome headless) | (T06) | 28문항 진단·라우팅·재개, 목표 연도/월, 60분 플랜(청해 제외·재배분·분량 부족 표기). 단위 18+UI 6 PASS |
+| T06 진단·목표·플랜 | DONE(PC Chrome headless) | 0080a9d | 28문항 진단·라우팅·재개, 목표 연도/월, 60분 플랜(청해 제외·재배분·분량 부족 표기). 단위 18+UI 6 PASS |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
