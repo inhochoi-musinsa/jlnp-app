@@ -12,13 +12,15 @@ export interface UserSettings {
   furiganaMode: FuriganaMode;
   theme: Theme;
   targetLevel: Level;
+  /** Practise UNVERIFIED content too (never used for assessment). */
+  includeUnverified: boolean;
   defaultTimed: false; // time limit is never on by default (UX invariant 1)
   dailyBudgetMinutes: 60;
   timezone: "Asia/Seoul";
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  fontScale: "M", furiganaMode: "STUDY_ONLY", theme: "SYSTEM", targetLevel: DEFAULT_TARGET_LEVEL,
+  fontScale: "M", furiganaMode: "STUDY_ONLY", theme: "SYSTEM", targetLevel: DEFAULT_TARGET_LEVEL, includeUnverified: false,
   defaultTimed: false, dailyBudgetMinutes: 60, timezone: "Asia/Seoul",
 };
 
@@ -33,6 +35,7 @@ export function sanitizeSettings(raw: unknown): UserSettings {
     furiganaMode: pick(r.furiganaMode, FURIGANA_MODES, DEFAULT_SETTINGS.furiganaMode),
     theme: pick(r.theme, THEMES, DEFAULT_SETTINGS.theme),
     targetLevel: isLevel(r.targetLevel) ? r.targetLevel : DEFAULT_SETTINGS.targetLevel,
+    includeUnverified: r.includeUnverified === true,
   };
 }
 

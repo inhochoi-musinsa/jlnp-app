@@ -6,6 +6,10 @@ import type { AppStorage } from "../storage/session";
 import { applyImport, backupFileName, exportBackup, previewImport, type ImportPreview } from "../storage/backup";
 import type { AppModel } from "../state";
 import type { ConnectionManager } from "../google/connection";
+import type { ImportReport } from "../content/import";
+import { reportLines } from "../content/import";
+import { KINDS, type Kind } from "../../../shared/schema";
+import { RUNWAY_WARN_DAYS } from "../domain/progress";
 import { DOMAIN_LABEL, DOMAINS } from "../domain/planner";
 import { ROUTE_LABEL, DIAG_GROUPS } from "../domain/diagnostic";
 import { daysBetween, effectiveDate, eligibleDays, isPastSession, maximumRemainingMinutes } from "../domain/target";
@@ -19,6 +23,11 @@ export interface PageCtx {
   storage?: AppStorage;
   conn?: ConnectionManager | null;
   go: (hash: string) => void;
+  planImport: (text: string, kinds: Kind[], forceAdd: Set<string>) => ImportReport | null;
+  applyImport: (text: string, kinds: Kind[], forceAdd: Set<string>) => Promise<string>;
+  exportPack: (o: { kinds: Kind[]; includeUnverified: boolean }) => number;
+  exportProgress: () => void;
+  exportFlags: () => number;
   startDemo?: () => void;
   setTarget: (level: Level, year: number, month: number) => Promise<void>;
   confirmDate: (year: number, month: number, date: string, url: string) => Promise<void>;
@@ -71,6 +80,10 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
       muted(m.diag.answered ? `배치 진단을 이어서 하세요. (${m.diag.answered} / ${m.diag.total} 완료)` : "먼저 배치 진단(28문항)으로 시작 경로를 정합니다. 시간 제한이 없고 중간에 멈춰도 됩니다."),
       btn(m.diag.answered ? "진단 이어서 하기" : "배치 진단 시작", () => ctx.go("#diag"), "primary", "start-diag")));
   } else if (m.plan) root.append(planCard(m, ctx));
+  // runway
+  const rw = m.runway;
+  root.append(card("남은 학습 분량", h("p", { id: "runway-text" }, `남은 학습 분량: ${rw.days}일`),
+    rw.needsContent ? h("p", { class: "banner warn", id: "need-content", role: "status" }, `콘텐츠 추가 필요 (${RUNWAY_WARN_DAYS}일 미만) — 설정 > 콘텐츠에서 진도를 내보내 PC에서 새 콘텐츠를 만드세요.`) : null));
   // 2. 복습
   root.append(card("오늘 복습", muted("복습할 항목이 없습니다. (복습 엔진은 v1.0.0에서 제공됩니다.)")));
   // 3. 영역
@@ -201,6 +214,7 @@ export function renderSettings(root: HTMLElement, ctx: PageCtx): void {
       segmented("theme", "화면 색", "theme", THEMES, THEME_LABEL, s),
       muted("글자는 화면에 맞춰 자동으로 줄어들지 않습니다.")),
     connectionCard(ctx),
+    contentCard(ctx),
     backupCard(ctx),
     card("앱 정보", h("p", {}, `버전 v${ctx.version}`), h("p", {}, `실행 환경: ${runtimeModeLabel(ctx.mode)}`)),
   );
@@ -254,4 +268,57 @@ function connectionCard(ctx: PageCtx): HTMLElement {
     case "LOCAL_FILE": break;
   }
   return card("시트 연결", h("div", { id: "conn-body", "aria-live": "polite" }, ...body));
+}
+
+const KIND_LABEL: Record<Kind, string> = { KANA: "가나", VOCAB: "어휘", KANJI: "한자", GRAMMAR: "문법", QUESTION: "문제", PASSAGE: "지문", LISTENING: "청해" };
+const ACTION_LABEL: Record<string, string> = { ADD: "신규", ADD_VERSION_ACTIVE: "새 버전(활성)", ADD_VERSION_CANDIDATE: "새 버전(후보)", SKIP_SAME: "중복(동일)", SKIP_DUPLICATE_KEY: "중복(같은 항목)", SKIP_SIMILAR: "유사 항목", SKIP_FLAGGED_SAME_HASH: "신고·폐기 항목", REJECT: "거부", HOLD: "보류" };
+
+function kindChecks(name: string): { box: HTMLElement; selected: () => Kind[] } {
+  const inputs = KINDS.map((k) => h("input", { type: "checkbox", name, value: k, checked: true, "aria-label": KIND_LABEL[k] }) as HTMLInputElement);
+  const box = h("div", { class: "row" }, ...KINDS.map((k, i) => h("label", { class: "seg-opt" }, inputs[i]!, h("span", {}, KIND_LABEL[k]))));
+  return { box, selected: () => inputs.filter((i) => i.checked).map((i) => i.value as Kind) };
+}
+
+function contentCard(ctx: PageCtx): HTMLElement {
+  const m = ctx.model;
+  const out = h("div", { id: "pack-report", "aria-live": "polite" });
+  const imp = kindChecks("imp-kind");
+  const exp = kindChecks("exp-kind");
+  let text = "";
+  const forced = new Set<string>();
+  const show = () => {
+    out.textContent = "";
+    const r = ctx.planImport(text, imp.selected(), forced);
+    if (!r) return;
+    out.append(h("p", { id: "report-summary" }, reportLines(r)[0]));
+    if (!r.ok) return;
+    const rows = r.outcomes.filter((o) => o.action !== "ADD").slice(0, 60);
+    if (rows.length) out.append(h("ul", { class: "report-list" }, ...rows.map((o) => h("li", {}, `${ACTION_LABEL[o.action] ?? o.action} · ${o.contentId}${o.detail ? ` — ${o.detail}` : ""}${o.existingId ? ` (기존 ${o.existingId})` : ""}`,
+      o.action === "SKIP_SIMILAR" ? h("label", { class: "seg-opt" }, h("input", { type: "checkbox", checked: forced.has(o.contentId), onchange: (e: Event) => { if ((e.target as HTMLInputElement).checked) forced.add(o.contentId); else forced.delete(o.contentId); show(); } }), h("span", {}, "그래도 추가")) : null))));
+    if (r.summary.demoted) out.append(muted("검증 증명이 부족한 항목은 미검증(UNVERIFIED)으로 가져옵니다. 가져온 팩의 '검증됨' 표시는 서명이 없는 자가 신고입니다."));
+    out.append(h("button", { class: "primary", type: "button", id: "apply-pack", disabled: r.toWrite.length === 0, onclick: async () => {
+      out.textContent = "반영 중…";
+      const msg = await ctx.applyImport(text, imp.selected(), forced);
+      // applying refreshes the model and redraws the page, so write the result into the CURRENT report element
+      const cur = document.getElementById("pack-report") ?? out;
+      cur.textContent = "";
+      cur.append(h("p", { id: "apply-result" }, msg));
+    } }, "가져오기 승인"));
+  };
+  const file = h("input", { type: "file", id: "import-pack-file", accept: "application/json,.json", "aria-label": "팩 파일 선택", onchange: async (e: Event) => { const f = (e.target as HTMLInputElement).files?.[0]; if (!f) return; text = await f.text(); forced.clear(); show(); } });
+  const unv = h("input", { type: "checkbox", id: "include-unverified", checked: ctx.settings.get().includeUnverified, onchange: (e: Event) => ctx.settings.set({ includeUnverified: (e.target as HTMLInputElement).checked }) });
+  const expUnv = h("input", { type: "checkbox", id: "export-unverified" }) as HTMLInputElement;
+  const exMsg = h("div", { id: "export-result", "aria-live": "polite" });
+  const flagCount = m?.flags.size ?? 0;
+  return card("콘텐츠",
+    h("p", { id: "content-count" }, `보유 콘텐츠: ${m?.pool.length ?? 0}개 (학습 가능)`),
+    h("label", { class: "seg-opt" }, unv, h("span", {}, "미검증 콘텐츠 포함 (연습에만 사용)")),
+    h("h3", {}, "가져오기"), muted("전체 팩 또는 유형별로 가져올 수 있습니다. 쓰기 전에 검사 리포트를 먼저 보여 드립니다."), imp.box, h("label", { for: "import-pack-file" }, "팩 파일 "), file, out,
+    h("h3", {}, "내보내기"), exp.box,
+    h("label", { class: "seg-opt" }, expUnv, h("span", {}, "미검증 포함")),
+    btn("팩 내보내기", () => { const n = ctx.exportPack({ kinds: exp.selected(), includeUnverified: expUnv.checked }); exMsg.textContent = `${n}개 항목을 내보냈습니다. 개인 기록·설정·시트 주소는 포함되지 않습니다.`; }, "primary", "export-pack"), exMsg,
+    h("h3", {}, "진도·신고"), muted("PC에서 새 콘텐츠를 만들 때 쓰는 진도 파일입니다. 영역별 정확도, 오개념 태그별 오답 수, 미노출 수, 런웨이만 들어 있습니다."),
+    btn("진도 내보내기", () => ctx.exportProgress(), "ghost", "export-progress"),
+    h("p", { id: "flag-count" }, `신고한 문제: ${flagCount}개`),
+    btn("신고 목록 내보내기", () => { ctx.exportFlags(); }, "ghost", "export-flags"));
 }

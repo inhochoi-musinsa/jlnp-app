@@ -54,3 +54,5 @@ ruby rt{font-size:.55em}
 .big{font-size:1.2em;font-weight:700;margin:4px 0}
 details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .toast{position:fixed;left:16px;right:16px;bottom:72px;margin:0 auto;max-width:560px;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;z-index:10}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center;z-index:20}.sheet{background:var(--bg);width:100%;max-width:640px;border-radius:16px 16px 0 0;padding:16px max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-bottom))}
+.report-list{padding-left:1.1em;font-size:.9em}h3{font-size:1em;margin:12px 0 4px}

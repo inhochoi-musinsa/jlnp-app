@@ -15,6 +15,10 @@ import { todayKey } from "./domain/target";
 import { ConnectionManager } from "./google/connection";
 import { requestAccessToken } from "./google/gis";
 import { SEED_PACK } from "./content/seed";
+import { planImport as planImportFn } from "./content/import";
+import { exportPack as exportPackFn, packFileName } from "./content/export";
+import { buildFlagsExport, buildProgress, FLAG_REASONS } from "./domain/progress";
+import type { Kind } from "../../shared/schema";
 
 declare const __APP_VERSION__: string;
 declare const __GOOGLE_CLIENT_ID__: string;
@@ -78,12 +82,68 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       else if (e.type === "QUESTION_SUBMITTED") rec("QUESTION_SUBMITTED", e.itemId, { contentId: e.itemId, selectedChoiceId: e.selectedChoiceId, isCorrect: e.isCorrect, order: e.order, exposureType: o.exposureType, elapsedActiveMs: Math.round(clock.elapsed(Date.now()) - qStart), contentVersion: 1 });
       else rec("ANSWER_REVEALED", e.itemId, { contentId: e.itemId });
     };
-    return new QuizShell(host, items, { onEvent, progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
+    return new QuizShell(host, items, { onEvent, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
+  };
+
+  const download = (name: string, data: unknown): void => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: "application/json" }));
+    const a = h("a", { href: url, download: name }) as HTMLAnchorElement;
+    document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  const existingFor = () => ({ rows: model?.rows ?? [], blockedIds: new Set<string>([...(model?.flags.keys() ?? []), ...(model?.retired ?? [])]), exposed: model?.exposed ?? new Set<string>() });
+  const stamp = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+  const openReport = (item: QuizItem): void => {
+    const rec = model?.byId.get(item.id);
+    const reasons = FLAG_REASONS.map((r, i) => h("label", { class: "seg-opt" }, h("input", { type: "radio", name: "flag-reason", value: r, checked: i === 0 }), h("span", {}, r)));
+    const overlay = h("div", { class: "overlay", role: "dialog", "aria-modal": "true", "aria-label": "문제 신고" },
+      h("div", { class: "sheet" }, h("h2", {}, "문제 신고"), h("p", { class: "muted" }, "신고하면 이 문제는 앞으로 나오지 않습니다."), h("div", { id: "flag-reasons" }, ...reasons),
+        h("div", { class: "actions" },
+          h("button", { class: "ghost", type: "button", onclick: () => overlay.remove() }, "취소"),
+          h("button", { class: "primary", type: "button", id: "flag-submit", onclick: async () => {
+            const reason = (overlay.querySelector("input[name=flag-reason]:checked") as HTMLInputElement | null)?.value ?? "기타";
+            await storage?.record("CONTENT_FLAGGED", item.id, { contentId: item.id, reason, contentVersion: rec?.contentVersion ?? 1, contentHash: rec?.contentHash ?? "" });
+            overlay.replaceChildren(h("div", { class: "sheet" }, h("p", { id: "flag-done" }, "신고했습니다. 이 문제는 앞으로 나오지 않습니다."), h("button", { class: "primary", type: "button", onclick: () => overlay.remove() }, "닫기")));
+            void refresh(false);
+          } }, "신고"))));
+    document.body.append(overlay);
   };
 
   const ctx: PageCtx = {
     mode, settings, version: __APP_VERSION__, availableLevels: [DEFAULT_TARGET_LEVEL],
     get model() { return model; }, get storage() { return storage; }, get conn() { return conn; }, go,
+    planImport: (text, kinds, forceAdd) => (model ? planImportFn(text, existingFor(), { kinds: kinds.length ? kinds : undefined, forceAdd }) : null),
+    applyImport: async (text, kinds, forceAdd) => {
+      if (!storage || !model) return "저장소를 열 수 없어 가져올 수 없습니다.";
+      const r = planImportFn(text, existingFor(), { kinds: kinds.length ? kinds : undefined, forceAdd });
+      if (!r.ok) return r.fileError ?? "가져올 수 없습니다.";
+      const manifest = r.pack!;
+      await storage.record("PACK_IMPORT_STARTED", manifest.packId, { packId: manifest.packId, packVersion: manifest.packVersion, items: r.toWrite.length });
+      await storage.store.putContent(r.toWrite); // idempotent by id@version, safe to re-run
+      let sheetNote = conn?.state.kind === "READY" ? "" : " (시트에는 아직 올라가지 않았습니다. 연결하면 자동으로 올라갑니다.)";
+      try {
+        if (conn?.state.kind === "READY") { const w = await conn.pushContent(r.toWrite, { packId: manifest.packId, packVersion: manifest.packVersion }, manifest); sheetNote = ` 시트에 ${w.written}건을 기록했습니다.`; }
+      } catch (e) { sheetNote = ` 시트 기록은 완료되지 않았습니다(${(e as Error).message}). 같은 파일을 다시 가져오면 이어서 반영됩니다.`; }
+      await storage.record("PACK_IMPORT_COMPLETED", manifest.packId, { packId: manifest.packId, packVersion: manifest.packVersion, items: r.toWrite.length });
+      await refresh();
+      const s = r.summary;
+      return `${r.toWrite.length}건을 반영했습니다 (신규 ${s.added} · 새 버전 ${s.newVersions} · 중복 ${s.duplicates} · 충돌 ${s.conflicts} · 거부 ${s.rejected} · 보류 ${s.held} · 강등 ${s.demoted}).${sheetNote}`;
+    },
+    exportPack: ({ kinds, includeUnverified }) => {
+      const pack = exportPackFn(model?.rows ?? [], { kinds: kinds.length ? kinds : undefined, includeUnverified }, { flagged: model?.flags ?? new Map(), retired: model?.retired ?? new Set() }, { appVersion: __APP_VERSION__ });
+      download(packFileName(pack, kinds), pack);
+      return pack.items.length;
+    },
+    exportProgress: () => {
+      if (!model) return;
+      const route = model.diag.routing.route === "PROVISIONAL" ? null : model.diag.routing.route;
+      download(`jlpt-progress_${stamp()}.json`, buildProgress({ records: model.records, pool: model.pool, events: model.events, level: settings.get().targetLevel, route, appVersion: __APP_VERSION__ }));
+    },
+    exportFlags: () => {
+      const list = [...(model?.flags.values() ?? [])];
+      download(`jlpt-flags_${stamp()}.json`, buildFlagsExport(list));
+      return list.length;
+    },
     startDemo: mode === "LOCALHOST_DEV" ? () => { location.hash = "#demo"; } : undefined,
     setTarget: async (level: Level, year: number, month: number) => {
       settings.set({ targetLevel: level });
@@ -143,7 +203,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
     if (!restoring) storage?.record("SETTINGS_UPDATED", "settings", s).then(() => refresh()).catch(() => {});
     if (keys.includes("targetLevel")) void refresh();
   });
-  addEventListener("hashchange", draw);
+  addEventListener("hashchange", () => { draw(); void refresh(false); });
   for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => clock.touch(Date.now()), { passive: true });
   document.addEventListener("visibilitychange", () => { if (document.hidden) { clock.pause(Date.now()); flushClock(); void conn?.syncNow("hidden"); } });
   addEventListener("pagehide", () => { clock.pause(Date.now()); flushClock(); void conn?.syncNow("end"); });

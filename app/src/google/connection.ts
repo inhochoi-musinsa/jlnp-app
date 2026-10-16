@@ -7,6 +7,9 @@ import { GoogleError, MSG } from "./errors";
 import { inspect, initialize, pullContent, type Inspection } from "./init";
 import { SheetsClient, SheetsEventLog, type HttpFetch } from "./sheets";
 import { parseSpreadsheetUrl } from "./url";
+import { writeContent } from "./contentSync";
+import { SHEET_HEADERS, SHEET_TABS } from "../../../shared/sheetSchema";
+import type { ContentRecord } from "../../../shared/schema";
 
 export type ConnState =
   | { kind: "LOCAL_FILE"; message: string }
@@ -127,6 +130,7 @@ export class ConnectionManager {
     st.onRecorded = () => { void this.sync?.notifyChanged(); };
     this.set({ kind: "READY" });
     await this.syncNow("manual");
+    try { await this.pushLocalContent(); } catch { /* reported by the next sync; local content stays */ }
   }
 
   async syncNow(reason: "manual" | "hidden" | "end" | "interval" | "threshold" = "manual"): Promise<void> {
@@ -157,6 +161,28 @@ export class ConnectionManager {
       this.fail(e);
       return 0;
     }
+  }
+
+  /** Writes imported content to `_JLPT_CONTENT` (idempotent, 200 rows per request, paced). */
+  async pushContent(records: ContentRecord[], pack: { packId: string; packVersion: string }, manifest?: unknown): Promise<{ written: number; skipped: number }> {
+    if (!this.client || this.state.kind !== "READY") return { written: 0, skipped: 0 };
+    const c = this.client;
+    const prog = await writeContent(c, records, pack, { sleep: this.d.sleep });
+    const at = new Date().toISOString();
+    const have = await c.readRange(SHEET_TABS.PACKS, 2, 5000, 2);
+    if (!have.some((r) => r[0] === pack.packId && r[1] === pack.packVersion)) {
+      await c.appendRows(SHEET_TABS.PACKS, [[pack.packId, pack.packVersion, "", "SELF_ATTESTED", "TRUE", at, JSON.stringify(manifest ?? {}), ""]], SHEET_HEADERS.PACKS.length);
+    }
+    const total = (await c.readRange(SHEET_TABS.CONTENT, 2, 200000, 1)).length;
+    const v = JSON.stringify(total);
+    await c.appendRows(SHEET_TABS.META, [["contentRowCount", v, at, ""]], SHEET_HEADERS.META.length);
+    return { written: prog.written, skipped: prog.skipped };
+  }
+
+  /** Content imported while the app was not connected goes to the sheet once it is. */
+  private async pushLocalContent(): Promise<void> {
+    const local = await this.d.storage.store.listContent();
+    if (local.length) await this.pushContent(local, { packId: "local-import", packVersion: "1.0.0" });
   }
 
   /** Token expired (401): ask for a new one; the outbox stays untouched. */

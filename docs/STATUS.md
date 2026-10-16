@@ -12,6 +12,7 @@
 | T05 콘텐츠 CLI 최소판 | DONE | 16700f3 | 시드 팩 45항목 전부 VERIFIED(생성 claude-sonnet-5-5 ≠ 검증 claude-opus-5-5, headless, 모델명 resolved). 테스트 125 PASS |
 | T06 진단·목표·플랜 | DONE(PC Chrome headless) | 0080a9d | 28문항 진단·라우팅·재개, 목표 연도/월, 60분 플랜(청해 제외·재배분·분량 부족 표기). 단위 18+UI 6 PASS |
 | T07 Google 연동·동기화 | **BLOCKED(GOOGLE) — 실제 E2E 미수행** / 코드·가짜 API 테스트 DONE | 18a3ad3 | GIS·URL 파서·Sheets 어댑터·비파괴 초기화·배치 동기화(readback ACK)·증분 로딩·오류 매트릭스·UI 구현. 테스트 59(가짜 Google, 실제 Google 아님). 체크리스트: docs/qa/t07-real-e2e-checklist.md |
+| T08 팩 import/export·신고·진도 | DONE(시트 쓰기는 가짜 API로만 검증) | (T08) | IMP-01~11, 병합 규칙, 5,000항목 계획 0.3초·200행 배치 25회, 신고·flags.json, progress.json(개인정보 0), 런웨이. 테스트 241 PASS |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
@@ -22,7 +23,7 @@
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T08 팩 import/export·신고·진도 내보내기 (T07이 BLOCKED이므로 Mock 기반으로 진행)
+T09 v0.1.0 릴리스 (통합 QA, 배포 스크립트, 도움말, 가이드 갱신; 실기기·실제 Google은 BLOCKED, 태그 보류)
 
 ## 해석·결정 기록
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.
@@ -33,3 +34,5 @@ T08 팩 import/export·신고·진도 내보내기 (T07이 BLOCKED이므로 Mock
 - T06 시드 분량: 진단 28 + 어휘 8 + 문법 포인트 4(+문제 3). 문법 문제가 4개가 아닌 3개인 것은 검증을 통과한 항목만 담았기 때문이다.
 - T07 결정: 계정 식별(`boundGoogleSub`)을 위한 `openid email` 추가 스코프는 요청하지 않는다(스코프 최소화). 계정/프로필 불일치는 시트 META의 `ownerProfileId`와 기기 `profileId` 비교로 판정한다. 새 기기(기록이 자동 생성 이벤트뿐)는 시트의 프로필에 합류한다.
 - T07 클라이언트 ID: 빌드 시 `config.local.json`의 `clientId`를 번들에 넣는다(공개 값). 테스트용 런타임 주입은 localhost에서만 허용.
+- T08 해석: 같은 id+같은 버전+같은 hash가 아니라 "같은 id로 더 높은 버전이 UNVERIFIED이고 기존이 VERIFIED"이면 후보(비활성), 반대로 기존이 UNVERIFIED이고 새 버전이 VERIFIED이면 새 버전이 활성이 된다(활성 = 가장 높은 VERIFIED 버전). 명세의 "둘 다 VERIFIED일 때만 전환"에서 후자 경우만 안전 쪽으로 넓혔다.
+- T08 런웨이: 현재 버전에서 공부할 수 있는 영역(어휘, 문법)만 센다. 독해·청해는 해당 기능(v2.0.0)이 들어올 때 `ACTIVE_AREAS`에 추가한다. 따라서 v0.1.0에서는 런웨이가 항상 14일 미만이라 "콘텐츠 추가 필요"가 보인다(시드가 작기 때문이며 정상).
