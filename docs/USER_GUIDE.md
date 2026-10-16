@@ -410,7 +410,7 @@ config.local.json         (깃에 올라가지 않음)
 
 ### 5.4.1 개별 명령 (수동으로 한 단계씩 실행할 때)
 
-`content:fill`(자동 순환, v1.0.0 작업에서 제공) 대신 단계를 직접 실행할 수 있다. 모든 명령은 저장소 루트에서 `npm run <이름> -- <옵션>` 형태로 쓴다.
+`content:fill`(자동 순환) 대신 단계를 직접 실행할 수도 있다. 모든 명령은 저장소 루트에서 `npm run <이름> -- <옵션>` 형태로 쓴다.
 
 | 명령 | 하는 일 |
 |---|---|
@@ -420,6 +420,8 @@ config.local.json         (깃에 올라가지 않음)
 | `content:verify -- --pack <팩 파일>` | 팩의 해시·개수 무결성을 점검한다. |
 | `content:pack -- --run <실행ID> --out packs/<이름>.jlptpack.json` | 검증을 통과한 항목만 팩으로 묶는다. |
 | `content:ledger -- --from-pack <전체 내보내기 파일>` | 중복 장부(`content/ledger.json`)를 다시 만든다. |
+| `content:plan -- --progress progress.json --days 28` | 앱에서 내보낸 진도로 **다음 생성 계획**을 만든다(`content/plan.json`). 계획 = 초기 분량 부족분과 런웨이(`--days`일) 부족분 중 큰 쪽이며, 자주 틀린 오개념 태그에는 가중을 둔다. 생성은 하지 않는다. |
+| `content:fill -- --days 28 --dry-run` | 계획대로 **생성 → 검증 → 팩**을 끝까지 돌린다. `--dry-run`은 예상 호출 수(API는 예상 비용)만 출력한다. `--max-usd`(API) / `--max-calls`(headless)로 상한을 주고, `--only KANA`처럼 그룹만 고를 수 있다. 중간에 멈추면 같은 명령을 다시 실행해 이어간다. 팩은 `packs/fill_<날짜>_<번호>.jlptpack.json`로 저장된다. 문법은 처음 한 번 **분류 목록**(`content/taxonomy/`)을 만들어 겹치지 않게 나눠 만든다. |
 | `content:catalog` | 장기 목표 대비 부족분을 보여 준다. |
 | `content:sample -- --n 20` | 사람이 훑어볼 표본을 `content/sample.md`로 만든다(필수 아님). |
 | `content:seed` | 앱에 내장되는 시드(진단 28문항 등)를 만든다. 개발자용. |

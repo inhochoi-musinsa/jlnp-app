@@ -84,17 +84,22 @@ describe("review state from events (AppModel)", () => {
     await completeDiagnostic(st);
     const m = await loadModel(st, DEFAULT_SETTINGS, now);
     expect(m.diag.routing.route).toBe("TARGET_FOCUS");
-    expect(m.review.newAllowed).toBe(15);
-    expect(m.review.session.length).toBe(15);
+    expect(m.review.newAllowed).toBe(15 + 1);                 // 15 new WORDS + 1 new grammar point (the seed has grammar) per day
+    const vocabCards = m.review.session.filter((c) => c.contentId.startsWith("vocab:"));
+    expect(vocabCards.length).toBeGreaterThanOrEqual(15 * 2);  // every word brings READING and MEANING (and CLOZE when its example contains the word)
+    expect(vocabCards.length).toBeLessThanOrEqual(15 * 3);
+    expect(m.review.session.filter((c) => c.contentId.startsWith("gram:")).length).toBe(1);
+    expect(new Set(m.review.session.filter((c) => c.contentId.startsWith("vocab:")).map((c) => c.contentId)).size).toBe(15);
     expect(m.plan!.allocation.VOCAB).toBeGreaterThan(0);
   });
-  it("the day's new-card cap counts cards already started today", async () => {
+  it("the day's new-item cap counts words already started today, not their cards", async () => {
     const st = await world(30); await completeDiagnostic(st);
     const m0 = await loadModel(st, DEFAULT_SETTINGS, now);
-    for (const c of m0.review.session.slice(0, 6)) await reviewed(st, c, true, m0.today);
+    const six = [...new Set(m0.review.session.map((c) => c.contentId).filter((id) => id.startsWith("vocab:")))].slice(0, 6);
+    for (const c of m0.review.session.filter((x) => six.includes(x.contentId))) await reviewed(st, c, true, m0.today);
     const m1 = await loadModel(st, DEFAULT_SETTINGS, now);
     expect(m1.newToday).toBe(6);
-    expect(m1.review.session.filter((c) => c.reviews === 0).length).toBe(9);
+    expect(new Set(m1.review.session.filter((c) => c.reviews === 0 && c.contentId.startsWith("vocab:")).map((c) => c.contentId)).size).toBe(9);
   });
   it("more than 25 expected review minutes -> 0 new cards (TST: 하루 25분 초과)", async () => {
     const st = await world(60); await completeDiagnostic(st);

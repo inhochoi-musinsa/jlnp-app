@@ -1,6 +1,6 @@
 {
   "name": "jlpt-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "JLPT study app: single-file dist/index.html + external content CLI",
@@ -21,7 +21,9 @@
     "content:sample": "tsx tools/content/src/cli.ts sample",
     "content:seed": "tsx tools/content/src/cli.ts seed",
     "deploy": "node scripts/deploy-pages.mjs",
-    "scan:secrets": "node scripts/scan-secrets.mjs"
+    "scan:secrets": "node scripts/scan-secrets.mjs",
+    "content:plan": "tsx tools/content/src/cli.ts plan",
+    "content:fill": "tsx tools/content/src/cli.ts fill"
   },
   "devDependencies": {
     "@types/kuromoji": "^0.1.3",

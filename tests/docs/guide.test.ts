@@ -9,8 +9,8 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : []; });
 const appSource = walk(join(root, "app/src")).map((f) => readFileSync(f, "utf8")).join("\n");
 
-// commands the guide mentions that belong to later tasks (T12 fill/plan, T14 audio, triage); listed explicitly so nothing else slips in
-const PLANNED = new Set(["content:plan", "content:fill", "content:audio", "content:triage"]);
+// commands the guide mentions that belong to later tasks (T14 audio, triage); listed explicitly so nothing else slips in
+const PLANNED = new Set(["content:audio", "content:triage"]);
 
 describe("T09: the guide matches the product", () => {
   it("every npm command in the guide exists (or is explicitly marked as planned)", () => {

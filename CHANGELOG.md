@@ -2,6 +2,17 @@
 
 Sections: Added / Changed / Fixed / Migrated / Content / Compatibility / Known Issues
 
+## 1.0.0 (release candidate, not tagged)
+### Added
+- Review engine (5 stages, cards, 25-minute rule, weak review), grammar principles, confusing-letter quiz.
+- content:plan / content:fill / grammar taxonomy; KANA generation and lint.
+### Changed
+- Daily new-item cap counts words, not cards; runway per area.
+### Content
+- 20 confusing kana pairs generated and verified (packs/, not committed).
+### Known Issues
+- Initial vocabulary/grammar/kanji volume BLOCKED(COST). See docs/releases/V1.md.
+
 ## 0.1.0 (release candidate, not tagged)
 ### Added
 - Single-file app (dist/index.html), local mode, quiz shell, diagnostic (28 questions), exam target, 60-minute plan.

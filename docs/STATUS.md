@@ -16,18 +16,20 @@
 | T09 v0.1.0 릴리스 | **DONE(후보), 태그 보류** | 9477672 | 통합 QA 기록(docs/qa/v0-qa.md), 릴리스 문서, 도움말, 가이드 대조 테스트, 화면 캡처, 배포 스크립트(스테이징만), 비밀 스캔. 262 테스트 PASS. P0 미해결(실제 Google, Android, 사람 검수, 게시 승인)로 `v0.1.0` 태그는 만들지 않음 |
 | T10 복습 엔진 | DONE(PC Chrome headless) | 8db0057 | 전이표 전 경우·25분 규칙·재생 복원·약점 점수 단위 테스트, 카드 문항 생성(읽기/뜻/빈칸), 시작 전 안내, 재출제, 영역 5단계 막대, 약점 복습. |
 | T11 문법 원리 학습·혼동 글자 | DONE(PC Chrome headless) | 63d122e | 문법 포인트=복습 카드(원리 화면→문맥 문제 순환), 포인트 설명·연습 화면, 혼동 글자 퀴즈(별도 메뉴, 틀린 쌍 가중), 린트(어미만 풀리는 문항 6/6 차단·6/6 통과), KANA 생성 프롬프트·린트. 콘텐츠(혼동쌍 20)는 T12 |
+| T12 콘텐츠 런 1 → v1.0.0 | **기계장치 DONE / 분량 BLOCKED(COST)** | (T12) | content:plan·fill·taxonomy 구현·테스트(가짜 LLM 8+3). 실제 생성: 혼동쌍 20/20 완료(헤드리스, 59콜), 어휘 400·문법 40·한자 문항 100은 예상 2,039콜이라 승인 대기. 신규 상한을 카드→항목(단어/포인트) 단위로 정정. docs/releases/V1.md |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
 - T00⑤ 청해 선택지 수: 미확인(이미지 PDF, 렌더러 없음)
 - T00⑦ `file://` GIS 거부: 부분 확인(init 성공, 팝업은 헤드리스라 판정 불가)
+- **BLOCKED(COST) T12 초기 분량**: 어휘 392·문법 36점(문항 4개씩)·한자 문항 100 생성 예상 2,039 headless 호출. 호출 상한을 사용자가 승인해야 한다 (`npm run content:fill -- --days 28 --max-calls 2200`, 재실행 시 이어서 진행).
 - T07 실제 Google E2E: BLOCKED(GOOGLE: Client ID, HTTPS Origin, 테스트 시트, Android 기기). 가짜 API 테스트 통과를 실제 Google 완료로 보고하지 않는다.
 - 사용자 확인 대기: `git push` / GitHub Pages 게시 / 저장소 공개 설정(Free 플랜은 public 필요). 승인 전에는 `npm run deploy`가 site/ 스테이징만 한다.
 - Android 실기기 전 항목: BLOCKED(DEVICE) — T03 레이아웃도 PC Chrome 에뮬레이션 뷰포트만 검증
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T12 콘텐츠 런 1 → v1.0.0 (content:plan / content:fill, 초기 분량 생성)
+T13 독해 UI (T12 분량은 BLOCKED(COST)이지만 UI 작업은 콘텐츠 양에 의존하지 않으므로 진행)
 
 ## 해석·결정 기록
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.
@@ -44,3 +46,5 @@ T12 콘텐츠 런 1 → v1.0.0 (content:plan / content:fill, 초기 분량 생�
 - T10 재출제: 틀린 카드는 같은 세션 3문항 뒤에 1회만 다시 나오며, 재시도 결과는 단계·복습일을 바꾸지 않는다(`applyAnswer(retry)`).
 - T11 결정: 혼동 글자 읽기는 한국어 학습자를 위해 **한글 표기**(シ→시, ツ→츠)로 저장한다(`readings` 값). 혼동 퀴즈는 별도 연습이며 SRS 카드가 아니다.
 - T11 린트 보강: "서로 다른 조사 3개 이상"도 문맥 단서 1개로 센다(휴리스틱이므로 오탐/미탐이 있을 수 있음: 6개 차단·6개 통과 사례로 검증).
+- T12 정정(T10 결정 번복): 하루 새 항목 상한(5/10/15)은 **카드가 아니라 항목(단어)** 기준이다. 문법 포인트는 하루 1개(`GRAMMAR_NEW_PER_DAY`, `[실무 제안]`), 런웨이는 영역별 `미노출 항목 ÷ 하루 도입 수`의 최솟값이다. 이유: 초기 분량(어휘 400 ≈ 4주)과 맞추기 위함.
+- T12 생성기: 모델이 인기 항목만 반복하므로 "이미 만든 것(do NOT repeat)" 목록을 보충 시도마다 프롬프트에 넣는다. 형식이 깨진 항목은 배치 전체를 중단시키지 않고 건너뛴다.

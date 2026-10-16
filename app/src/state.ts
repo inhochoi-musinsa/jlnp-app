@@ -8,7 +8,7 @@ import type { SyncEvent } from "./storage/events";
 import type { AppStorage } from "./storage/session";
 import { DOMAINS, makePlan, type Plan, type PlanDomain } from "./domain/planner";
 import { activeVersions, effectiveStatus, flagProjection, studyPool, type FlagInfo } from "./content/status";
-import { computeRunway, DAILY_NEW_CAP, type Runway } from "./domain/progress";
+import { computeRunway, dailyIntake, type Runway } from "./domain/progress";
 import { buildQueue, observedSecondsPerCard, replayCards, wordStage, type CardState, type ReviewQueue, type Stage } from "./domain/srs";
 import { allCards, directionsFor } from "./domain/cards";
 import { kanaPairs } from "./domain/kana";
@@ -81,12 +81,18 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const cards = allCards(pool, states);
   const grammarPoints = pool.filter((r) => r.kind === "GRAMMAR" && r.pool === "LEARN");
   const secondsPerCard = observedSecondsPerCard(events);
-  const newToday = cards.filter((c) => c.firstDay === today).length;
+  const isGrammarCard = (c: CardState) => grammarPoints.some((g) => g.contentId === c.contentId);
+  const groupOf = (c: CardState) => (isGrammarCard(c) ? "GRAMMAR" : "VOCAB");
+  // items (words / grammar points) first answered today, per group
+  const startedToday: Record<string, Set<string>> = { VOCAB: new Set(), GRAMMAR: new Set() };
+  for (const c of cards) if (c.firstDay === today) startedToday[groupOf(c)]!.add(c.contentId);
+  const newTodayBy = { VOCAB: startedToday.VOCAB!.size, GRAMMAR: startedToday.GRAMMAR!.size };
+  const newToday = newTodayBy.VOCAB + newTodayBy.GRAMMAR;
   const remainingMinutes = Math.max(0, Math.floor((settings.dailyBudgetMinutes * 60 - activeSecondsToday) / 60));
-  const review = buildQueue({ cards, today, dailyNewCap: route ? DAILY_NEW_CAP[route] : 0, secondsPerCard, availableMinutes: remainingMinutes, newToday });
+  const intake = dailyIntake(route);
+  const review = buildQueue({ cards, today, newCaps: route ? { VOCAB: intake.VOCAB, GRAMMAR: intake.GRAMMAR } : { VOCAB: 0, GRAMMAR: 0 }, groupOf, secondsPerCard, availableMinutes: remainingMinutes, newToday: newTodayBy });
   const vocabStages = vocab.map((r) => wordStage(states, r.contentId, directionsFor(r, pool)));
   const grammarStages = grammarPoints.filter((g) => directionsFor(g, pool).length).map((g) => wordStage(states, g.contentId, directionsFor(g, pool)));
-  const isGrammarCard = (c: CardState) => grammarPoints.some((g) => g.contentId === c.contentId);
   const sessionVocab = review.session.filter((c) => !isGrammarCard(c));
   const sessionGrammar = review.session.filter(isGrammarCard);
   const available = Object.fromEntries(DOMAINS.map((d) => [d, (d === "GRAMMAR" && (studyQuestions.length > 0 || sessionGrammar.length > 0)) || (d === "VOCAB" && sessionVocab.length > 0)])) as Record<PlanDomain, boolean>;
@@ -95,7 +101,8 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const plan = route
     ? makePlan({ route, activeSecondsToday, dailyBudgetMinutes: settings.dailyBudgetMinutes, available, capacityMinutes: { GRAMMAR: Math.ceil((studyQuestions.length * SECONDS_PER_QUESTION + sessionGrammar.length * secondsPerCard) / 60), VOCAB: Math.ceil((sessionVocab.length * secondsPerCard) / 60) } })
     : null;
-  const runway = computeRunway(pool, events, route, { unseenVocabCards: cards.filter((c) => !isGrammarCard(c) && c.reviews === 0 && c.dueAt === null).length, unseenGrammarCards: cards.filter((c) => isGrammarCard(c) && c.reviews === 0 && c.dueAt === null).length });
+  const unseenItems = (grammar: boolean) => new Set(cards.filter((c) => isGrammarCard(c) === grammar && cards.filter((x) => x.contentId === c.contentId).every((x) => x.reviews === 0 && x.dueAt === null)).map((c) => c.contentId)).size;
+  const runway = computeRunway(pool, events, route, { unseenVocabWords: unseenItems(false), unseenGrammarPoints: unseenItems(true) });
   return {
     cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, review, secondsPerCard, newToday, vocabStages, vocab,
     rows, records, pool, flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), diag, today, activeSecondsToday,

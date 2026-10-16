@@ -179,3 +179,30 @@ describe("MockSheetsAdapter (MOCK ONLY, not evidence of real Google behaviour)",
     expect(await m.rowCount()).toBe(1); // written although the caller saw an error
   });
 });
+
+describe("T12: an app update keeps the records written by an older app version", () => {
+  it("opens a version-1 database (events + meta only) with the current code and keeps every event", async () => {
+    const factory = new IDBFactory();
+    // what app version 0.0.x/0.1.0 wrote: DB_VERSION 1, no `content` store
+    await new Promise<void>((resolve, reject) => {
+      const open = factory.open("jlpt-app", 1);
+      open.onupgradeneeded = () => { const db = open.result; db.createObjectStore("events", { keyPath: "event.eventId" }).createIndex("status", "status"); db.createObjectStore("meta"); };
+      open.onsuccess = () => {
+        const db = open.result;
+        const tx = db.transaction(["events", "meta"], "readwrite");
+        for (let i = 1; i <= 5; i++) tx.objectStore("events").add({ event: mk(i), status: i % 2 ? "PENDING" : "SYNCED" });
+        tx.objectStore("meta").put("dev-old", "deviceId");
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(tx.error);
+      };
+      open.onerror = () => reject(open.error);
+    });
+    const store = await IndexedDbStore.open(factory);
+    expect((await store.listEvents()).length).toBe(5);
+    expect((await store.listPending()).length).toBe(3);
+    expect(await store.getMeta("deviceId")).toBe("dev-old");
+    await store.putContent([]); // the new content store exists after the upgrade
+    const st = await AppStorage.init(factory);
+    expect(st.deviceId).toBe("dev-old");
+  });
+});

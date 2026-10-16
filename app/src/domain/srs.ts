@@ -115,12 +115,16 @@ export interface QueueInput {
   /** all cards that can currently be asked (state may be fresh) */
   cards: CardState[];
   today: string;
-  dailyNewCap: number;
+  /** new ITEMS (words / grammar points) per day for the single group "ALL"; use newCaps/groupOf for several groups */
+  dailyNewCap?: number;
+  newCaps?: Record<string, number>;
+  /** which cap group a card belongs to (default: everything is "ALL") */
+  groupOf?: (c: CardState) => string;
   secondsPerCard: number;
   /** minutes left today (plan budget); the queue never exceeds it */
   availableMinutes: number;
-  /** new cards the learner already started today */
-  newToday?: number;
+  /** items (not cards) already started today, per group (or a number for "ALL") */
+  newToday?: number | Record<string, number>;
 }
 
 export interface ReviewQueue {
@@ -128,24 +132,44 @@ export interface ReviewQueue {
   fresh: CardState[];
   weak: CardState[];
   expectedDueMinutes: number;
-  /** due cards first (weakest first), then new cards; trimmed to the time budget */
+  /** due cards first (weakest first), then the cards of the new items; trimmed to the time budget */
   session: CardState[];
+  /** new ITEMS still allowed today (sum over groups) */
   newAllowed: number;
   reason: string;
 }
 
-/** §6.1/6.3: due items first; if the expected review time exceeds 25 min no NEW cards are introduced. */
+/**
+ * §6.1/6.3: due items first; if the expected review time exceeds 25 min no NEW items are introduced.
+ * The daily new cap counts items (a word brings all of its cards with it), not cards.
+ */
 export function buildQueue(i: QueueInput): ReviewQueue {
+  const groupOf = i.groupOf ?? (() => "ALL");
+  const caps = i.newCaps ?? { ALL: i.dailyNewCap ?? 0 };
+  const today = typeof i.newToday === "number" ? { ALL: i.newToday } : i.newToday ?? {};
   const answered = i.cards.filter((c) => c.reviews > 0 || c.dueAt !== null);
   const due = answered.filter((c) => isDue(c, i.today)).sort((a, b) => weaknessScore(b, i.today) - weaknessScore(a, i.today) || (a.dueAt ?? "").localeCompare(b.dueAt ?? "") || a.key.localeCompare(b.key));
   const fresh = i.cards.filter((c) => c.reviews === 0 && c.dueAt === null).sort((a, b) => a.key.localeCompare(b.key));
   const weak = answered.filter((c) => weaknessScore(c, i.today) > 0).sort((a, b) => weaknessScore(b, i.today) - weaknessScore(a, i.today) || a.key.localeCompare(b.key));
   const expectedDueMinutes = (due.length * i.secondsPerCard) / 60;
   const overloaded = expectedDueMinutes > REVIEW_LIMIT_MINUTES;
-  const newAllowed = overloaded ? 0 : Math.max(0, i.dailyNewCap - (i.newToday ?? 0));
+  const left: Record<string, number> = {};
+  for (const g of new Set(fresh.map(groupOf))) left[g] = overloaded ? 0 : Math.max(0, (caps[g] ?? 0) - (today[g] ?? 0));
+  const newAllowed = Object.values(left).reduce((a, b) => a + b, 0);
   const budgetCards = Math.max(0, Math.floor((i.availableMinutes * 60) / i.secondsPerCard));
   const chosenDue = due.slice(0, budgetCards);
-  const chosenNew = fresh.slice(0, Math.min(newAllowed, Math.max(0, budgetCards - chosenDue.length)));
+  // new items in key order; every card of an item is taken together, as long as the time budget allows
+  const byItem = new Map<string, CardState[]>();
+  for (const c of fresh) (byItem.get(c.contentId) ?? byItem.set(c.contentId, []).get(c.contentId)!).push(c);
+  const chosenNew: CardState[] = [];
+  const used: Record<string, number> = {};
+  let room = Math.max(0, budgetCards - chosenDue.length);
+  for (const [, cs] of byItem) {
+    const g = groupOf(cs[0]!);
+    if ((used[g] ?? 0) >= (left[g] ?? 0)) continue;
+    if (cs.length > room) continue;
+    chosenNew.push(...cs); used[g] = (used[g] ?? 0) + 1; room -= cs.length;
+  }
   const reason = overloaded ? "복습이 많아 오늘은 새 항목을 추가하지 않습니다." : due.length ? "기한이 된 항목과 최근 틀린 항목을 먼저 복습합니다." : "복습할 항목이 없어 새 항목을 시작합니다.";
   return { due, fresh, weak, expectedDueMinutes, session: [...chosenDue, ...chosenNew], newAllowed, reason };
 }

@@ -56,14 +56,16 @@ describe("T10 review engine in a real browser", () => {
     await page.click("#start-review");
     await page.waitForSelector("#brief-go");
     const brief = (await page.textContent("#brief-list"))!;
-    expect(brief).toMatch(/무엇을: .+/); expect(brief).toMatch(/몇 개: 15개/); expect(brief).toMatch(/예상 소요: 약 \d+분/); expect(brief).toContain("다음 계속하기"); expect(brief).toContain("한 번 더 나오고");
+    expect(brief).toMatch(/무엇을: .+/);
+    const N = Number(/몇 개: (\d+)개/.exec(brief)![1]);
+    expect(N).toBeGreaterThanOrEqual(8); expect(brief).toMatch(/예상 소요: 약 \d+분/); expect(brief).toContain("다음 계속하기"); expect(brief).toContain("한 번 더 나오고");
     await page.click("#brief-go");
     await page.waitForSelector(".quiz-progress");
-    expect(await page.textContent(".quiz-progress")).toBe("1 / 15");
+    expect(await page.textContent(".quiz-progress")).toBe(`1 / ${N}`);
 
     // answer the first card wrong: the same card comes back once, a few items later
     const firstStem = await answer(page, "wrong");
-    expect(await page.textContent(".quiz-progress")).toBe("2 / 16");
+    expect(await page.textContent(".quiz-progress")).toBe(`2 / ${N + 1}`);
     const stems: string[] = [];
     for (let i = 0; i < 4; i++) stems.push(await answer(page, "correct"));
     expect(stems.filter((s) => s === firstStem).length).toBe(1);
@@ -75,7 +77,7 @@ describe("T10 review engine in a real browser", () => {
     await page.waitForSelector("#sync-badge");
     const evs = await events(page);
     const cr = evs.filter((e) => e.type === "CARD_REVIEWED").map((e) => e.p);
-    expect(cr.length).toBe(16);
+    expect(cr.length).toBe(N + 1);
     expect(cr.filter((p) => p.retry).length).toBe(1);
     expect(cr[0]).toMatchObject({ correct: false, retry: false });
     expect(cr.find((p) => p.retry)).toMatchObject({ correct: true });
@@ -90,7 +92,7 @@ describe("T10 review engine in a real browser", () => {
     await tomorrow.addInitScript((iso) => { (window as any).__JLPT_TEST_NOW__ = iso; }, t);
     await tomorrow.goto(URL + "#home");
     await tomorrow.waitForSelector("#start-review");
-    expect(await tomorrow.textContent("#review-counts")).toMatch(/기한 도래 1[0-9]개/);
+    expect(await tomorrow.textContent("#review-counts")).toMatch(/기한 도래 \d+개/);
     expect(await tomorrow.textContent("#review-counts")).toMatch(/틀리기 쉬운 항목 [1-9]\d*개/);
     // distribution bar for 어휘·한자 exists with an accessible label
     const bar = await tomorrow.getAttribute("[data-area='어휘·한자'] .stagebar", "aria-label");
@@ -107,18 +109,20 @@ describe("T10 review engine in a real browser", () => {
   it("due cards come first and wrong answers drop a stage (state replay through the UI)", async () => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
     const page = await doneDiagnostic(ctx);
-    await page.goto(URL + "#review"); await page.click("#brief-go");
-    for (let i = 0; i < 15; i++) await answer(page, "correct");
+    await page.goto(URL + "#review");
+    const N2 = Number(/몇 개: (\d+)개/.exec((await page.textContent("#brief-list"))!)![1]);
+    await page.click("#brief-go");
+    for (let i = 0; i < N2; i++) await answer(page, "correct");
     await page.waitForSelector("#sync-badge");
     const day2 = await ctx.newPage();
     await day2.addInitScript((iso) => { (window as any).__JLPT_TEST_NOW__ = iso; }, new Date(Date.now() + 25 * 3600 * 1000).toISOString());
     await day2.goto(URL + "#review"); await day2.waitForSelector("#brief-go");
-    expect(await day2.textContent("#brief-list")).toMatch(/기한 도래 15개/);
+    expect(await day2.textContent("#brief-list")).toContain(`기한 도래 ${N2}개`);
     await day2.click("#brief-go");
     await answer(day2, "wrong");
-    for (let i = 0; i < 20; i++) { if ((await day2.locator(".choice").count()) === 0) break; await answer(day2, "correct"); }
+    for (let i = 0; i < N2 + 5; i++) { if ((await day2.locator(".choice, #intro-go").count()) === 0) break; await answer(day2, "correct"); }
     const evs = (await events(day2)).filter((e) => e.type === "CARD_REVIEWED").map((e) => e.p);
-    expect(evs.length).toBeGreaterThanOrEqual(31);
+    expect(evs.length).toBeGreaterThanOrEqual(2 * N2);
     await ctx.close();
   }, 120000);
 });
