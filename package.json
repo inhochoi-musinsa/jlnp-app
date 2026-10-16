@@ -10,7 +10,8 @@
     "size": "node scripts/measure-size.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run lint:level-neutral && npm run test && npm run build",
+    "lint:level-neutral": "node scripts/level-neutral.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

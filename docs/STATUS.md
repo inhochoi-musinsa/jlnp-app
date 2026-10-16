@@ -6,6 +6,7 @@
 |---|---|---|---|
 | T00 사실 확인 | DONE(일부 BLOCKED/미확인) | 0b18a89 | ①②③④⑥⑩ 확인, ⑤ 미확인, ⑦ 부분 확인, ⑨ BLOCKED(DEVICE, GOOGLE) |
 | T01 저장소·빌드 | DONE | 4130934 | 빌드 2.4 KiB, file:// 및 localhost 렌더 확인, 테스트 5 PASS |
+| T02 공용 스키마·도메인 | DONE | (T02) | 테스트 50 PASS, lint:level-neutral 0건 |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
@@ -15,4 +16,4 @@
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T02 공용 스키마·도메인
+T03 퀴즈 쉘·설정·홈 쉘
