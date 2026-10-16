@@ -1,0 +1,196 @@
+{
+  "_note": "Quantity targets for this level (execution_plan §4.1). [실무 제안, 미검증]. Counts are VERIFIED items, not coverage of the official exam.",
+  "level": "N3",
+  "initial": {
+    "diagnostic": 28,
+    "seed": {
+      "VOCAB": 8,
+      "GRAMMAR": 4,
+      "PASSAGE": 2
+    },
+    "beforeV1": {
+      "VOCAB": 400,
+      "GRAMMAR": {
+        "points": 40,
+        "lowerLevelPoints": 15,
+        "targetLevelPoints": 25,
+        "minQuestionsPerPoint": 4
+      },
+      "KANJI_QUESTIONS": 100,
+      "KANA_CONFUSION_PAIRS": 20
+    },
+    "beforeV2": {
+      "PASSAGE": {
+        "total": 10,
+        "SHORT": 4,
+        "MEDIUM": 4,
+        "LONG": 1,
+        "INFO": 1
+      },
+      "LISTENING": {
+        "total": 40,
+        "perTaskType": 8
+      }
+    },
+    "beforeV3": {
+      "ASSESS_QUESTIONS_PER_SCORING_SECTION": 60
+    }
+  },
+  "longTerm": {
+    "VOCAB": 2000,
+    "GRAMMAR": {
+      "points": 200,
+      "lowerLevelPoints": 60,
+      "targetLevelPoints": 140
+    },
+    "PASSAGE": 40,
+    "LISTENING": 100
+  },
+  "dailyNewCap": {
+    "KANA_FOUNDATION": 5,
+    "FOUNDATION": 10,
+    "TARGET_FOCUS": 15
+  },
+  "seedPlan": [
+    {
+      "group": "KANA",
+      "kind": "QUESTION",
+      "pool": "DIAG",
+      "level": "N5",
+      "domain": "KANA",
+      "count": 8,
+      "groupTag": "diag:KANA",
+      "guide": "Hiragana/katakana recognition for absolute beginners. Mix: look-alike katakana pairs (シ/ツ, ソ/ン), voiced/semi-voiced marks (か/が, は/ぱ), small kana (きょ vs きよ), sokuon (っ) and long-vowel reading (おばさん/おばあさん). Question forms: 'which reading is correct for this word written in kana', or 'which word matches this reading'. Answerable without audio. Stems may add a short Korean gloss."
+    },
+    {
+      "group": "FOUNDATION",
+      "kind": "QUESTION",
+      "pool": "DIAG",
+      "level": "N5",
+      "domain": "GRAMMAR_FORM",
+      "count": 4,
+      "groupTag": "diag:FOUNDATION",
+      "guide": "Basic grammar for beginners: particles (は/が/を/に/で/へ/と), verb and adjective conjugation (て-form, ない-form, past), basic sentence patterns. Full sentences with clear context."
+    },
+    {
+      "group": "FOUNDATION",
+      "kind": "QUESTION",
+      "pool": "DIAG",
+      "level": "N4",
+      "domain": "CONTEXT",
+      "count": 4,
+      "groupTag": "diag:FOUNDATION",
+      "guide": "Basic vocabulary in context: choose the word that fits the blank (verbs, adjectives, adverbs, everyday nouns), transitive vs intransitive pairs, counters."
+    },
+    {
+      "group": "TARGET_LANGUAGE",
+      "kind": "QUESTION",
+      "pool": "DIAG",
+      "level": "N3",
+      "domain": "GRAMMAR_FORM",
+      "count": 3,
+      "groupTag": "diag:TARGET_LANGUAGE",
+      "guide": "Grammar at the target level in real sentence context: pick the form or pattern that fits. Include look-alike patterns Korean speakers confuse."
+    },
+    {
+      "group": "TARGET_LANGUAGE",
+      "kind": "QUESTION",
+      "pool": "DIAG",
+      "level": "N3",
+      "domain": "CONTEXT",
+      "count": 3,
+      "groupTag": "diag:TARGET_LANGUAGE",
+      "guide": "Vocabulary at the target level in context: choose the word that fits the blank; include a Sino-Japanese false friend for Korean speakers."
+    },
+    {
+      "group": "TARGET_READING",
+      "kind": "PASSAGE",
+      "pool": "DIAG",
+      "level": "N3",
+      "count": 1,
+      "passageType": "SHORT",
+      "questionsPerPassage": 3,
+      "groupTag": "diag:TARGET_READING"
+    },
+    {
+      "group": "TARGET_READING",
+      "kind": "PASSAGE",
+      "pool": "DIAG",
+      "level": "N3",
+      "count": 1,
+      "passageType": "INFO",
+      "questionsPerPassage": 3,
+      "groupTag": "diag:TARGET_READING"
+    },
+    {
+      "group": "LEARN_VOCAB",
+      "kind": "VOCAB",
+      "pool": "LEARN",
+      "level": "N3",
+      "count": 8,
+      "topic": "daily life, work, feelings (mixed)"
+    },
+    {
+      "group": "LEARN_GRAMMAR",
+      "kind": "GRAMMAR",
+      "pool": "LEARN",
+      "level": "N3",
+      "count": 4,
+      "questionsPerPoint": 1
+    }
+  ],
+  "topics": [
+    "일상생활(집·가사)",
+    "음식과 식사",
+    "쇼핑과 가격",
+    "교통과 이동",
+    "직장과 업무",
+    "학교와 공부",
+    "건강과 병원",
+    "감정과 성격",
+    "날씨와 자연",
+    "여행과 숙박",
+    "통신과 인터넷",
+    "가족과 인간관계",
+    "취미와 여가",
+    "사회와 뉴스",
+    "수량과 시간 표현",
+    "동작 동사(자동사·타동사 쌍)",
+    "형용사와 부사",
+    "한자어(한국어와 형태가 비슷한 말)",
+    "경어와 정중한 표현",
+    "계절과 행사"
+  ],
+  "domainGuides": {
+    "READING_KANJI": "Kanji reading questions: a word written in kanji (sentence context) and 4 candidate readings; include on/kun traps, long vowels, voiced/unvoiced differences, small tsu. The stem shows the word in a short sentence.",
+    "ORTHOGRAPHY": "Orthography questions: a word written in kana inside a sentence and 4 candidate kanji spellings, including look-alike kanji and Sino-Japanese words that differ from Korean hanja usage.",
+    "CONTEXT": "Vocabulary-in-context questions: choose the word that fits the blank (verbs, adjectives, adverbs, nouns), including transitive/intransitive pairs and false friends for Korean speakers."
+  },
+  "fill": {
+    "VOCAB": {
+      "chunk": 40
+    },
+    "GRAMMAR": {
+      "questionsPerPoint": 4,
+      "patternsPerChunk": 4
+    },
+    "KANJI_QUESTIONS": {
+      "READING_KANJI": 40,
+      "ORTHOGRAPHY": 30,
+      "CONTEXT": 30,
+      "chunk": 10
+    },
+    "KANA": {
+      "chunk": 20
+    },
+    "levels": {
+      "lower": [
+        "N5",
+        "N4"
+      ],
+      "target": [
+        "N3"
+      ]
+    }
+  }
+}

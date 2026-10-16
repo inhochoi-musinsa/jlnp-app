@@ -1,0 +1,24 @@
+{
+  "_note": "USD per million tokens (MTok). Source: https://platform.claude.com/docs/en/about-claude/pricing (fetched 2026-10-16). Client-side estimate only; the bill may differ.",
+  "verifiedAt": "2026-10-16",
+  "currency": "USD",
+  "models": {
+    "claude-sonnet-5-5": { "alias": "sonnet", "inputPerMTok": 2, "outputPerMTok": 10, "cacheWrite5mPerMTok": 2.5, "cacheWrite1hPerMTok": 4, "cacheReadPerMTok": 0.1 },
+    "claude-opus-5-5":   { "alias": "opus",   "inputPerMTok": 4, "outputPerMTok": 20, "cacheWrite5mPerMTok": 5, "cacheWrite1hPerMTok": 8, "cacheReadPerMTok": 0.2 },
+    "claude-haiku-5-5":  { "alias": "haiku",  "inputPerMTok": 0.1, "outputPerMTok": 0.5, "cacheWrite5mPerMTok": 0.125, "cacheWrite1hPerMTok": 0.2, "cacheReadPerMTok": 0.01,
+                           "overPromptTokens": 100000, "inputPerMTokOver": 0.5, "outputPerMTokOver": 2.5 },
+    "claude-fable-5-1":  { "alias": "fable",  "inputPerMTok": 10, "outputPerMTok": 50, "cacheWrite5mPerMTok": 12.5, "cacheWrite1hPerMTok": 20, "cacheReadPerMTok": 0.25 }
+  },
+  "batchDiscount": 0.5,
+  "tts": {
+    "_note": "Source: https://cloud.google.com/text-to-speech/pricing (page rendered in browser 2026-10-16). Billing must be enabled. Table rows for WaveNet and Standard share one SKU on the page; treat as [미확인] which row applies and re-check before bulk synthesis.",
+    "google": {
+      "standard":  { "freeCharsPerMonth": 4000000, "usdPerMillionChars": 4 },
+      "wavenet":   { "freeCharsPerMonth": 4000000, "usdPerMillionChars": 4, "confidence": "미확인(표가 Standard와 같은 SKU로 표기됨)" },
+      "neural2":   { "freeCharsPerMonth": 1000000, "usdPerMillionChars": 16 },
+      "studio":    { "freeCharsPerMonth": 1000000, "usdPerMillionChars": 160 },
+      "chirp3hd":  { "freeCharsPerMonth": 1000000, "usdPerMillionChars": 30 },
+      "maxBytesPerRequest": 5000
+    }
+  }
+}
