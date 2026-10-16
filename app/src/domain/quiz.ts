@@ -6,6 +6,10 @@ export interface QuizItem {
   correctChoiceId: string;
   explanationKo: string;
   stimulusId?: string;
+  /** record to report/mark as seen when the item is a card made from another record (e.g. the linked grammar question) */
+  refId?: string;
+  /** lines shown once before the question (new grammar point principle) */
+  intro?: { title: string; lines: string[] };
 }
 export type Phase = "QUESTION" | "ANSWER_SELECTED" | "FEEDBACK" | "FINISHED";
 

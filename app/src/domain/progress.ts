@@ -20,12 +20,12 @@ export interface Runway { perArea: Partial<Record<Area, { unseen: number; days: 
  * Runway = for every studyable area, (unseen new items / daily new cap); the smallest value is the runway.
  * `pool` must already be the study pool (active, verified, not flagged).
  */
-export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route: Route | null, opts: { unseenVocabCards?: number } = {}): Runway {
+export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route: Route | null, opts: { unseenVocabCards?: number; unseenGrammarCards?: number } = {}): Runway {
   const seen = new Set<string>();
   const reviewed = new Set<string>();
   for (const e of events) {
     const p = JSON.parse(e.payloadJson);
-    if ((e.type === "QUESTION_PRESENTED" || e.type === "QUESTION_SUBMITTED") && p.contentId) { seen.add(p.contentId); if (p.stimulusId) seen.add(p.stimulusId); }
+    if ((e.type === "QUESTION_PRESENTED" || e.type === "QUESTION_SUBMITTED") && p.contentId) { seen.add(p.contentId); if (p.refId) seen.add(p.refId); if (p.stimulusId) seen.add(p.stimulusId); }
     if (e.type === "CARD_REVIEWED" && p.contentId) reviewed.add(p.contentId);
   }
   const questionsOf = (parent: string) => pool.filter((r) => r.kind === "QUESTION" && (r.payload.linkedContentId === parent || r.payload.stimulusId === parent));
@@ -39,6 +39,7 @@ export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route:
     else if (r.kind === "KANA") { if (!reviewed.has(r.contentId)) unseen.KANA++; }
   }
   if (opts.unseenVocabCards !== undefined) unseen.VOCAB = opts.unseenVocabCards;
+  if (opts.unseenGrammarCards !== undefined) unseen.GRAMMAR = opts.unseenGrammarCards + (pool.filter((r) => r.kind === "QUESTION" && r.pool === "LEARN" && !r.payload.linkedContentId && areaOfQuestion(r) === "GRAMMAR" && !seen.has(r.contentId)).length);
   const dailyCap = DAILY_NEW_CAP[route ?? "FOUNDATION"];
   const perArea: Runway["perArea"] = {};
   let days = Infinity; let limiting: Area | null = null;

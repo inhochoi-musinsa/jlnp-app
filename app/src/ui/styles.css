@@ -58,3 +58,4 @@ details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .report-list{padding-left:1.1em;font-size:.9em}h3{font-size:1em;margin:12px 0 4px}
 .stagebar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--border);margin:6px 0}
 .st{display:block;height:100%}.st0{background:#9aa5b0}.st1{background:#e0a63a}.st2{background:#5aa0d6}.st3{background:#3a7ec0}.st4{background:#2e8b57}
+.quiz.is-intro{grid-template-rows:auto minmax(0,1fr) auto}

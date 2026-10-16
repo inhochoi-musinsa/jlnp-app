@@ -3,7 +3,7 @@ import { FONT_PX, SettingsStore, type UserSettings } from "./domain/settings";
 import { DEFAULT_TARGET_LEVEL, type Level } from "../../shared/examSpec";
 import { DEMO_ITEMS } from "./content/demoItems";
 import { QuizShell } from "./ui/quiz";
-import { renderBrief, renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
+import { renderBrief, renderGrammarList, renderGrammarPoint, renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
 import { buildTabBar, tabFromHash, type TabId } from "./ui/shell";
 import { h } from "./ui/dom";
 import { AppStorage } from "./storage/session";
@@ -12,7 +12,8 @@ import { ActiveTimer } from "./domain/activity";
 import { toQuizItem } from "./domain/content";
 import type { QuizEvent, QuizItem } from "./domain/quiz";
 import { todayKey } from "./domain/target";
-import { cardItemId, cardQuestion, parseCardItemId } from "./domain/cards";
+import { cardItemId, cardQuestion, parseCardItemId, linkedQuestions } from "./domain/cards";
+import { kanaSession, parseKanaItemId } from "./domain/kana";
 import { ConnectionManager } from "./google/connection";
 import { requestAccessToken } from "./google/gis";
 import { SEED_PACK } from "./content/seed";
@@ -35,10 +36,12 @@ export function applySettings(doc: Document, s: UserSettings): void {
 function loadHint(): unknown { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null"); } catch { return null; } }
 function saveHint(s: UserSettings): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* storage may be unavailable */ } }
 
-type Route = TabId | "demo" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
-const EXTRA_ROUTES = ["diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
+type Route = TabId | "demo" | "grammar" | "gp" | "gp-run" | "kana" | "kana-run" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
+const EXTRA_ROUTES = ["grammar", "kana", "kana-run", "diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
 const routeOf = (hash: string): Route => {
   const id = hash.replace(/^#/, "");
+  if (id.startsWith("gp/")) return "gp";
+  if (id.startsWith("gp-run/")) return "gp-run";
   if (EXTRA_ROUTES.includes(id)) return id as Route;
   const t = tabFromHash(hash);
   return t === "quiz" ? "learn" : t;
@@ -64,7 +67,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
 
   const testNow = mode === "LOCALHOST_DEV" ? (window as unknown as { __JLPT_TEST_NOW__?: string }).__JLPT_TEST_NOW__ : undefined;
   const now = (): Date => (testNow ? new Date(testNow) : new Date());
-  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run"].includes(routeOf(location.hash));
+  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run", "kana-run", "gp-run"].includes(routeOf(location.hash));
   const isEditing = () => { const a = document.activeElement; return !!a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName); };
   // Background updates (sync status, pulls) never tear down a running quiz or a half-typed form.
   const refresh = async (force = true) => { model = await loadModel(storage, settings.get(), now()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
@@ -83,9 +86,17 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
     const dayKey = () => todayKey(now(), settings.get().timezone);
     const onEvent = (e: QuizEvent) => {
       const it = items.find((x) => x.id === e.itemId);
+      const kana = parseKanaItemId(e.itemId);
+      if (kana) {
+        const base = { contentId: kana.pairId, kanaPair: kana.pairId, kanaMode: kana.mode, exposureType: o.exposureType };
+        if (e.type === "QUESTION_PRESENTED") { qStart = clock.elapsed(Date.now()); rec("QUESTION_PRESENTED", kana.pairId, { ...base, order: e.order, contentVersion: 1 }); }
+        else if (e.type === "QUESTION_SUBMITTED") rec("QUESTION_SUBMITTED", kana.pairId, { ...base, selectedChoiceId: e.selectedChoiceId, isCorrect: e.isCorrect, order: e.order, elapsedActiveMs: Math.round(clock.elapsed(Date.now()) - qStart), contentVersion: 1 });
+        else rec("ANSWER_REVEALED", kana.pairId, { contentId: kana.pairId });
+        return;
+      }
       const card = parseCardItemId(e.itemId);
       if (card) {
-        const base = { contentId: card.contentId, direction: card.direction, exposureType: o.exposureType, retry: card.retry };
+        const base = { contentId: card.contentId, direction: card.direction, exposureType: o.exposureType, retry: card.retry, refId: it?.refId ?? null };
         if (e.type === "QUESTION_PRESENTED") { qStart = clock.elapsed(Date.now()); rec("QUESTION_PRESENTED", card.contentId, { ...base, stimulusId: null, order: e.order, contentVersion: 1 }); }
         else if (e.type === "QUESTION_SUBMITTED") {
           const elapsed = Math.round(clock.elapsed(Date.now()) - qStart);
@@ -103,7 +114,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       const c = parseCardItemId(item.id);
       if (!c || c.retry || ok || !model) return;
       const r = model.byId.get(c.contentId);
-      const q = r ? cardQuestion(r, c.direction, model.vocab, dayKey(), true) : null;
+      const q = r ? cardQuestion(r, c.direction, model.pool, dayKey(), true, model.cardStates.get(`${c.contentId}#${c.direction}`)?.reviews ?? 0) : null;
       if (q) session.insertAfterCurrent(q);
     };
     return new QuizShell(host, items, { onEvent, afterSubmit, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
@@ -118,7 +129,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   const stamp = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const openReport = (item: QuizItem): void => {
-    const target = parseCardItemId(item.id)?.contentId ?? item.id;
+    const target = item.refId ?? parseCardItemId(item.id)?.contentId ?? item.id;
     const rec = model?.byId.get(target);
     const reasons = FLAG_REASONS.map((r, i) => h("label", { class: "seg-opt" }, h("input", { type: "radio", name: "flag-reason", value: r, checked: i === 0 }), h("span", {}, r)));
     const overlay = h("div", { class: "overlay", role: "dialog", "aria-modal": "true", "aria-label": "문제 신고" },
@@ -188,6 +199,15 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       quiz = new QuizShell(host, DEMO_ITEMS, { onExit: () => go("#learn") });
       return;
     }
+    if (route === "kana" && model) {
+      const view = h("main", { class: "view" });
+      root.append(view, buildTabBar("learn"));
+      const items = kanaSession(model.pool, model.events, todayKey(now(), settings.get().timezone));
+      renderBrief(view, ctx, { title: "혼동 글자", purpose: "모양이 비슷해 헷갈리는 글자(シ/ツ 등)의 읽기와 글자를 구분합니다.", count: items.length, minutes: (items.length * 15) / 60, startHash: "#kana-run", extra: ["틀린 글자 쌍은 다음 퀴즈에서 더 자주 나옵니다. 복습 단계(5단계)에는 반영되지 않는 별도 연습입니다."] });
+      return;
+    }
+    if (route === "grammar" && model) { const view = h("main", { class: "view" }); root.append(view, buildTabBar("learn")); renderGrammarList(view, ctx); return; }
+    if (route === "gp" && model) { const view = h("main", { class: "view" }); root.append(view, buildTabBar("learn")); renderGrammarPoint(view, ctx, decodeURIComponent(location.hash.replace(/^#gp\//, ""))); return; }
     if ((route === "review" || route === "weak") && model) {
       const view = h("main", { class: "view" });
       root.append(view, buildTabBar("home"));
@@ -202,7 +222,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       });
       return;
     }
-    if ((route === "review-run" || route === "weak-run" || route === "diag-run" || route === "study") && model) {
+    if ((route === "review-run" || route === "weak-run" || route === "diag-run" || route === "study" || route === "kana-run" || route === "gp-run") && model) {
       const host = h("main", { class: "view-quiz" });
       root.append(host);
       if (route === "diag-run") {
@@ -212,23 +232,35 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
         quiz = runQuiz(host, items, { exposureType: "DIAGNOSTIC", activity: "DIAGNOSTIC", offset: model.diag.answered, total: model.diag.total, onExit: () => { void refresh().then(() => go("#home")); }, onFinish: () => finishDiagnostic() });
       } else {
         const day = todayKey(now(), settings.get().timezone);
-        const cardItems = (cs: { contentId: string; direction: Parameters<typeof cardQuestion>[1] }[]) => cs.flatMap((c) => { const r = model!.byId.get(c.contentId); const q = r ? cardQuestion(r, c.direction, model!.vocab, day) : null; return q ? [q] : []; });
+        const cardItems = (cs: { contentId: string; direction: Parameters<typeof cardQuestion>[1]; reviews: number }[]) => cs.flatMap((c) => { const r = model!.byId.get(c.contentId); const q = r ? cardQuestion(r, c.direction, model!.pool, day, false, c.reviews) : null; return q ? [q] : []; });
         let items: QuizItem[];
-        if (route === "review-run") items = cardItems(model.review.session);
+        if (route === "kana-run") items = kanaSession(model.pool, model.events, day);
+        else if (route === "gp-run") {
+          const pid = decodeURIComponent(location.hash.replace(/^#gp-run\//, ""));
+          const pt = model.grammarPoints.find((g) => g.contentId === pid);
+          items = pt ? linkedQuestions(pt, model.pool).map((r) => toQuizItem(r, model!.byId)) : [];
+        }
+        else if (route === "review-run") items = cardItems(model.review.session);
         else if (route === "weak-run") items = cardItems(model.review.weak.slice(0, 10));
         else {
           // today's session: vocabulary cards for the planned minutes + grammar questions for theirs
           const p = model.plan;
-          const nCards = p ? Math.floor((p.allocation.VOCAB * 60) / model.secondsPerCard) : model.review.session.length;
-          const nQ = p ? p.allocation.GRAMMAR : model.studyQuestions.length;
-          items = [...cardItems(model.review.session.slice(0, Math.max(0, nCards))), ...model.studyQuestions.slice(0, Math.max(0, nQ)).map((r) => toQuizItem(r, model!.byId))];
+          const gp = model.grammarPoints;
+          const isG = (c: { contentId: string }) => gp.some((g) => g.contentId === c.contentId);
+          const vocabCardsToday = model.review.session.filter((c) => !isG(c));
+          const grammarCardsToday = model.review.session.filter(isG);
+          const nV = p ? Math.floor((p.allocation.VOCAB * 60) / model.secondsPerCard) : vocabCardsToday.length;
+          const nG = p ? Math.floor((p.allocation.GRAMMAR * 60) / model.secondsPerCard) : grammarCardsToday.length;
+          const gCards = grammarCardsToday.slice(0, Math.max(0, nG));
+          const nQ = p ? Math.max(0, Math.floor((p.allocation.GRAMMAR * 60 - gCards.length * model.secondsPerCard) / 60)) : model.studyQuestions.length;
+          items = [...cardItems(vocabCardsToday.slice(0, Math.max(0, nV))), ...cardItems(gCards), ...model.studyQuestions.slice(0, nQ).map((r) => toQuizItem(r, model!.byId))];
         }
         if (!items.length) { go("#learn"); return; }
         quiz = runQuiz(host, items, { exposureType: "PRACTICE", activity: route === "weak-run" ? "WEAK_REVIEW" : "STUDY", onExit: () => { void refresh().then(() => go("#home")); }, onFinish: () => { void refresh().then(() => go("#home")); } });
       }
       return;
     }
-    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : route === "study" ? "learn" : route === "help" ? "settings" : (route as TabId);
+    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : ["study", "grammar", "gp", "kana"].includes(route) ? "learn" : route === "help" ? "settings" : (route as TabId);
     const banner = mode === "LOCAL_FILE" ? h("div", { class: "banner warn", role: "status" }, "로컬 모드: Google 연결이 되지 않으며 기록이 이 기기에 보존된다는 보장이 없습니다. 백업을 자주 내보내세요.") : null;
     const view = h("main", { class: "view" });
     if (banner) root.append(banner);

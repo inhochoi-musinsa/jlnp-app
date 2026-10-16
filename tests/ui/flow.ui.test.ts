@@ -31,6 +31,8 @@ function cardAnswer(stem: string): string | undefined {
 }
 
 async function answerOne(page: Page, mode: "correct" | "wrong"): Promise<void> {
+  await page.waitForSelector(".choice, #intro-go");
+  if (await page.locator("#intro-go").count()) await page.click("#intro-go"); // new grammar point: read the principle first
   await page.waitForSelector(".choice");
   const texts = await page.$$eval(".choice .ctext", (els) => els.map((e) => e.textContent ?? ""));
   const stem = ((await page.textContent("#pane-body")) ?? "").trim();

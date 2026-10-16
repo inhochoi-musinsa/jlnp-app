@@ -21,6 +21,8 @@ function correctFor(stem: string, texts: string[]): string {
   const gloss = /（([^（）]+)）\s*$/.exec(stem.trim()); return VOCAB.find((v) => v.meaningKo === gloss![1]).surface;
 }
 async function answer(page: Page, mode: "correct" | "wrong"): Promise<string> {
+  await page.waitForSelector(".choice, #intro-go");
+  if (await page.locator("#intro-go").count()) await page.click("#intro-go"); // new grammar point: read the principle first
   await page.waitForSelector(".choice");
   const texts = await page.$$eval(".choice .ctext", (e) => e.map((x) => x.textContent ?? ""));
   const stem = ((await page.textContent("#pane-body")) ?? "").trim();

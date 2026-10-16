@@ -91,7 +91,7 @@ export function exposedContentIds(events: SyncEvent[], questionToStimulus: Map<s
   for (const e of events) {
     if (e.type !== "QUESTION_PRESENTED" && e.type !== "QUESTION_SUBMITTED") continue;
     const p = JSON.parse(e.payloadJson);
-    if (p.contentId) { ids.add(p.contentId); const st = p.stimulusId ?? questionToStimulus.get(p.contentId); if (st) ids.add(st); }
+    if (p.contentId) { ids.add(p.contentId); if (p.refId) ids.add(p.refId); const st = p.stimulusId ?? questionToStimulus.get(p.contentId); if (st) ids.add(st); }
   }
   return ids;
 }

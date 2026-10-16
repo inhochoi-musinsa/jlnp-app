@@ -27,6 +27,7 @@ export class QuizShell {
   private root: HTMLElement;
   private pageIndex = 0;
   private detailChoiceId: string | null = null;
+  private introSeen = new Set<string>();
   private resizeObs?: ResizeObserver;
 
   constructor(private host: HTMLElement, items: QuizItem[], private opts: QuizOptions = {}) {
@@ -50,6 +51,7 @@ export class QuizShell {
     const item = s.item!;
     const feedback = s.phase === "FEEDBACK";
     this.pageIndex = 0;
+    if (s.phase === "QUESTION" && item.intro && !this.introSeen.has(item.id)) { this.renderIntro(item); return; }
 
     const header = h("header", { class: "quiz-head" },
       h("span", { class: "quiz-progress", "aria-live": "polite" }, `${s.index + 1 + (this.opts.progress?.offset ?? 0)} / ${this.opts.progress?.total ?? s.items.length}`),
@@ -72,6 +74,20 @@ export class QuizShell {
     this.root.append(header, pane, choices, actions);
     this.fillPane(feedback);
   }
+
+  /** One-time principle screen before the first question of a new grammar point (no choices here, so nothing to hide later). */
+  private renderIntro(item: QuizItem): void {
+    const s = this.session;
+    this.root.textContent = "";
+    this.root.classList.add("is-intro");
+    const header = h("header", { class: "quiz-head" }, h("span", { class: "quiz-progress" }, `${s.index + 1 + (this.opts.progress?.offset ?? 0)} / ${this.opts.progress?.total ?? s.items.length}`), h("button", { class: "ghost", type: "button", onclick: () => this.opts.onExit?.() }, "나가기"));
+    const pane = h("div", { class: "pane", id: "pane" }, h("div", { class: "pane-body", id: "pane-body" }), h("div", { class: "pager", id: "pager", hidden: true }));
+    const actions = h("div", { class: "actions" }, h("button", { class: "primary", type: "button", id: "intro-go", onclick: () => { this.introSeen.add(item.id); this.root.classList.remove("is-intro"); this.render(); } }, "문제 풀기"));
+    this.root.append(header, pane, actions);
+    this.pendingIntro = item;
+    this.fillPane(false);
+  }
+  private pendingIntro: QuizItem | null = null;
 
   private choiceButton(c: QuizChoice, i: number, feedback: boolean): HTMLElement {
     const s = this.session;
@@ -101,6 +117,11 @@ export class QuizShell {
   private chunks(feedback: boolean): HTMLElement[] {
     const item = this.session.item!;
     const out: HTMLElement[] = [];
+    if (this.root.classList.contains("is-intro") && item.intro) {
+      out.push(h("p", { class: "chunk strong" }, item.intro.title));
+      for (const l of item.intro.lines) out.push(h("p", { class: "chunk" }, richText(l)));
+      return out;
+    }
     const sentences = (t: string) => t.split(/(?<=[。！？\n])/u).map((x) => x.trim()).filter(Boolean);
     if (!feedback) {
       for (const sent of sentences(item.stem)) out.push(h("p", { class: "chunk" }, richText(sent)));

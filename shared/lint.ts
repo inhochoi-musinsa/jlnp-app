@@ -42,9 +42,12 @@ const CUE_PATTERNS: RegExp[] = [
   /私|僕|彼|彼女|先生|母|父|友達|友人|兄|姉|弟|妹|社長|部長|客|店員|子供|田中|山田|鈴木/u,
   /ない|なかった|ません|でした|ました|ている|ていた|てある|ておく/u,
 ];
+const PARTICLES = ["は", "が", "を", "に", "で", "と", "へ", "も", "の"];
 export function contextCueCount(stem: string): number {
   const s = nfkc(stem);
-  return CUE_PATTERNS.reduce((n, re) => n + (re.test(s) ? 1 : 0), 0);
+  // a stem that already uses three or more different particles carries clause structure of its own
+  const particleCue = PARTICLES.filter((x) => s.includes(x)).length >= 3 ? 1 : 0;
+  return CUE_PATTERNS.reduce((n, re) => n + (re.test(s) ? 1 : 0), particleCue);
 }
 
 /**
@@ -66,6 +69,16 @@ export function lintRecord(rec: ContentRecord): Issue[] {
   const p = rec.payload;
   const add = (code: string, path: string, message: string) => out.push({ code, path, message });
   if (rec.kind === "VOCAB" && typeof p.reading === "string" && !isKanaOnly(p.reading)) add("READING_CHARS", "payload.reading", "reading must be kana only");
+  if (rec.kind === "KANA") {
+    const chars = (p.chars ?? []) as string[];
+    const kanaChar = /^[\u3041-\u3096\u30A1-\u30FA]$/u;
+    if (chars.length !== 2 || chars[0] === chars[1] || !chars.every((c) => kanaChar.test(c))) add("KANA_CHARS", "payload.chars", "chars must be two different single kana");
+    else {
+      const rd = chars.map((c) => (p.readings ?? {})[c]);
+      if (rd.some((x) => typeof x !== "string" || !x.trim())) add("KANA_READINGS", "payload.readings", "each character needs a reading");
+      else if (rd[0] === rd[1]) add("KANA_READINGS", "payload.readings", "the two readings must differ");
+    }
+  }
   if (rec.kind === "KANJI") for (const k of [...(p.onyomi ?? []), ...(p.kunyomi ?? [])]) if (!isKanaOnly(String(k).replace(/[.\-]/g, ""))) add("READING_CHARS", "payload.onyomi/kunyomi", `non-kana reading: ${k}`);
   if (rec.kind === "QUESTION") {
     const choices: { id: string; text: string; whyWrong?: string; howToCorrect?: string }[] = p.choices ?? [];

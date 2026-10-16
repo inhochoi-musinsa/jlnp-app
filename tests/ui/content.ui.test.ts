@@ -20,6 +20,7 @@ const GEN = { tool: "t", toolVersion: "1", models: { generate: "claude-sonnet-5-
 const prov = { origin: "AI_GENERATED" as const, generatorModel: "claude-sonnet-5-5", createdAt: "2026-10-16T00:00:00Z" };
 const ver = (kind: string, over: Record<string, unknown> = {}) => ({ status: "VERIFIED" as const, selfAttested: false, verifierModel: "claude-opus-5-5", checks: (kind === "QUESTION" ? ["SCHEMA_LINT", "BLIND_SOLVE", "DISTRACTOR_CHECK", "QUALITY_CHECK"] : ["SCHEMA_LINT", "QUALITY_CHECK"]).map((id) => ({ id, result: "PASS" as const })), ...over });
 const vocab = (n: number, over: Record<string, unknown> = {}, v: any = ver("VOCAB")): ContentRecord => buildRecord({ kind: "VOCAB", level: "N3", pool: "LEARN", tags: [], payload: { surface: `新語${n}`, reading: "しんご", pos: "noun", meaningKo: `뜻${n}`, example: { ja: `これは新語${n}の例です。`, ko: "예문" }, levelEstimate: "N3", miscTags: [], ...over }, provenance: prov, verification: v });
+const plainQuestion = (n: number): ContentRecord => buildRecord({ kind: "QUESTION", level: "N3", pool: "LEARN", tags: ["KO_FALSE_FRIEND"], payload: { domain: "CONTEXT", stem: `この店のサービスは${n}年前よりずっと（　　）なりました。`, choices: ["a", "b", "c", "d"].map((id) => id === "a" ? { id, text: `良く${n}` } : { id, text: `悪い${id}${n}`, whyWrong: `${id}は文に合わない理由${n}`, howToCorrect: `${id}の直し方${n}` }), correctChoiceId: "a", explanationKo: `해설 ${n}`, scoringSection: "LANGUAGE_KNOWLEDGE" }, provenance: prov, verification: ver("QUESTION") });
 const packText = (items: ContentRecord[]) => JSON.stringify(buildPack(items, { generator: GEN }));
 const upload = (page: Page, text: string) => page.setInputFiles("#import-pack-file", { name: "p.jlptpack.json", mimeType: "application/json", buffer: Buffer.from(text) });
 
@@ -37,6 +38,12 @@ const downloadText = async (page: Page, selector: string): Promise<{ name: strin
   await dl.saveAs(path);
   return { name: dl.suggestedFilename(), text: readFileSync(path, "utf8") };
 };
+async function importPlainQuestions(page: Page): Promise<void> {
+  await page.goto(URL + "#settings");
+  await page.waitForFunction(() => Number(/(\d+)개/.exec(document.querySelector("#content-count")?.textContent ?? "")?.[1] ?? 0) > 0);
+  await upload(page, packText([plainQuestion(1), plainQuestion(2)]));
+  await page.click("#apply-pack"); await page.waitForSelector("#apply-result");
+}
 const poolCount = async (page: Page) => Number(/(\d+)개/.exec((await page.textContent("#content-count")) ?? "")![1]);
 
 describe("T08 runway, import, export, flags, progress (PC Chrome headless)", () => {
@@ -123,7 +130,9 @@ describe("T08 runway, import, export, flags, progress (PC Chrome headless)", () 
   }, 40000);
 
   it("report a question: it leaves the study pool at once, appears in flags.json, and the file holds no personal data", async () => {
-    const { page, close } = await open("#study");
+    const { page, close } = await open("#settings");
+    await importPlainQuestions(page);
+    await page.goto(URL + "#study");
     await page.waitForSelector(".choice");
     const stem = await page.textContent("#pane-body");
     await page.locator(".choice").first().click();
@@ -152,7 +161,9 @@ describe("T08 runway, import, export, flags, progress (PC Chrome headless)", () 
   }, 40000);
 
   it("progress export: aggregates only", async () => {
-    const { page, close } = await open("#study");
+    const { page, close } = await open("#settings");
+    await importPlainQuestions(page);
+    await page.goto(URL + "#study");
     await page.waitForSelector(".choice");
     await page.locator(".choice").first().click(); await page.click("#submit"); await page.waitForSelector("#next");
     await page.waitForFunction(async () => { // wait until the submit event is committed locally

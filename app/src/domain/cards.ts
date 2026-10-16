@@ -13,8 +13,18 @@ export function parseCardItemId(id: string): { contentId: string; direction: Dir
   return m ? { contentId: m[1]!, direction: m[2] as Direction, retry: !!m[3] } : null;
 }
 
-/** Directions that can be asked for a word given the current pool. AUDIO arrives with listening audio (v2.0.0). */
-export function directionsFor(r: ContentRecord, vocab: ContentRecord[]): Direction[] {
+/** Verified questions linked to a grammar point, in a stable order. */
+export const linkedQuestions = (point: ContentRecord, pool: ContentRecord[]): ContentRecord[] =>
+  pool.filter((q) => q.kind === "QUESTION" && q.payload.linkedContentId === point.contentId).sort((a, b) => a.contentId.localeCompare(b.contentId));
+
+/**
+ * Directions that can be asked for a card source given the current pool.
+ * VOCAB: READING/MEANING/(CLOZE). GRAMMAR: one CLOZE card per point, answered through its linked context questions.
+ * AUDIO arrives with listening audio (v2.0.0).
+ */
+export function directionsFor(r: ContentRecord, pool: ContentRecord[]): Direction[] {
+  if (r.kind === "GRAMMAR") return linkedQuestions(r, pool).length ? ["CLOZE"] : [];
+  const vocab = pool.filter((x) => x.kind === "VOCAB");
   if (vocab.length < 4) return [];
   const p = v(r);
   const out: Direction[] = ["READING", "MEANING"];
@@ -45,8 +55,10 @@ function pickDistractors(target: ContentRecord, vocab: ContentRecord[], text: (p
 }
 
 /** A 4-choice question for one card. Every wrong choice carries a real reason and a fix derived from the data. */
-export function cardQuestion(rec: ContentRecord, dir: Direction, vocab: ContentRecord[], day: string, retry = false): QuizItem | null {
-  if (!directionsFor(rec, vocab).includes(dir)) return null;
+export function cardQuestion(rec: ContentRecord, dir: Direction, pool: ContentRecord[], day: string, retry = false, reviews = 0): QuizItem | null {
+  if (!directionsFor(rec, pool).includes(dir)) return null;
+  if (rec.kind === "GRAMMAR") return grammarCard(rec, pool, retry, reviews);
+  const vocab = pool.filter((x) => x.kind === "VOCAB");
   const p = v(rec);
   const seed = `${rec.contentId}|${dir}|${day}`;
   const base = { id: cardItemId(rec.contentId, dir, retry), correctChoiceId: "a" } as const;
@@ -72,7 +84,30 @@ export function cardQuestion(rec: ContentRecord, dir: Direction, vocab: ContentR
     `빈칸에는 「${p.surface}」(${p.reading}, ${p.meaningKo})가 들어갑니다. 완성된 문장: ${sentence}`);
 }
 
-/** All askable cards for the vocabulary in the pool, merged with their replayed state. */
-export function vocabCards(vocab: ContentRecord[], states: Map<string, CardState>): CardState[] {
-  return vocab.flatMap((r) => directionsFor(r, vocab).map((d) => states.get(cardKey(r.contentId, d)) ?? newCard(r.contentId, d)));
+/** The point's next context question (a different one on each review) plus, for a new point, its principle as an intro. */
+function grammarCard(point: ContentRecord, pool: ContentRecord[], retry: boolean, reviews: number): QuizItem | null {
+  const qs = linkedQuestions(point, pool);
+  if (!qs.length) return null;
+  const q = qs[reviews % qs.length]!;
+  const g = point.payload as { pattern: string; attachment: string; meaningKo: string; nuanceKo: string; contrastPatterns: string[]; examples: { ja: string; ko: string }[] };
+  const p = q.payload as { stem: string; choices: QuizChoice[]; correctChoiceId: string; explanationKo: string };
+  return {
+    id: cardItemId(point.contentId, "CLOZE", retry), refId: q.contentId, stem: p.stem, choices: p.choices.map((c) => ({ ...c })), correctChoiceId: p.correctChoiceId,
+    explanationKo: p.explanationKo,
+    intro: reviews === 0 && !retry ? grammarIntro(g) : undefined,
+  };
 }
+
+export function grammarIntro(g: { pattern: string; attachment: string; meaningKo: string; nuanceKo: string; contrastPatterns: string[]; examples: { ja: string; ko: string }[] }): { title: string; lines: string[] } {
+  return {
+    title: `새 문법: ${g.pattern}`,
+    lines: [`뜻: ${g.meaningKo}`, `접속: ${g.attachment}`, `뉘앙스: ${g.nuanceKo}`, ...(g.contrastPatterns.length ? [`헷갈리는 문형: ${g.contrastPatterns.join(", ")}`] : []), ...g.examples.slice(0, 2).map((e) => `예문: ${e.ja} (${e.ko})`)],
+  };
+}
+
+/** All askable cards (vocabulary and grammar points) in the pool, merged with their replayed state. */
+export function allCards(pool: ContentRecord[], states: Map<string, CardState>): CardState[] {
+  return pool.filter((r) => (r.kind === "VOCAB" || r.kind === "GRAMMAR") && r.pool === "LEARN")
+    .flatMap((r) => directionsFor(r, pool).map((d) => states.get(cardKey(r.contentId, d)) ?? newCard(r.contentId, d)));
+}
+export const vocabCards = (vocab: ContentRecord[], states: Map<string, CardState>): CardState[] => allCards(vocab, states).filter((c) => vocab.some((v) => v.contentId === c.contentId && v.kind === "VOCAB"));

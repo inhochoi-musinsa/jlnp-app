@@ -1,7 +1,7 @@
 import { FONT_SCALES, FURIGANA_MODES, THEMES, type SettingsStore, type UserSettings } from "../domain/settings";
 import { LEVELS, type Level } from "../../../shared/examSpec";
 import { runtimeModeLabel, type RuntimeMode } from "../runtime";
-import { h } from "./dom";
+import { h, richText } from "./dom";
 import type { AppStorage } from "../storage/session";
 import { applyImport, backupFileName, exportBackup, previewImport, type ImportPreview } from "../storage/backup";
 import type { AppModel } from "../state";
@@ -96,7 +96,7 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
   const dist = stageDistribution(m.vocabStages);
   root.append(card("영역", h("div", { class: "areas" },
     areaBlock("어휘·한자", m.vocabStages.length ? dist : null),
-    areaBlock("문법", null), areaBlock("독해·청해", null))));
+    areaBlock("문법", m.grammarStages.length ? stageDistribution(m.grammarStages) : null), areaBlock("독해·청해", null))));
   // 4. 목표
   const t = targetSummary(m);
   root.append(card("목표", h("p", { id: "target-text" }, t.text), t.detail ? muted(t.detail) : null, btn("목표 변경", () => ctx.go("#settings"), "ghost")));
@@ -153,11 +153,37 @@ export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   const m = ctx.model;
   root.append(h("h1", {}, "학습"));
   const weak = m?.review.weak.length ?? 0;
+  const gp = m?.grammarPoints.length ?? 0, kn = m?.kanaPairs ?? 0;
   root.append(card("약점 복습", muted(weak ? `최근 많이 틀린 항목 ${weak}개를 모아 복습합니다.` : "아직 틀린 기록이 없어 약점 항목이 없습니다."), weak ? btn("약점 복습 시작", () => ctx.go("#weak"), "primary", "start-weak") : null));
   const n = (m?.studyQuestions.length ?? 0) + (m?.review.session.length ?? 0);
   root.append(card("오늘 세션", n ? muted(`오늘 할 수 있는 항목 ${n}개`) : muted("학습할 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 여기에 표시됩니다."), n ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "learn-start") : null));
-  root.append(card("영역별 학습 · 혼동 글자", muted("이후 작업(v1.0.0)에서 제공됩니다.")));
+  root.append(card("문법 학습", muted(gp ? `문법 포인트 ${gp}개. 설명을 읽고 문맥 문제로 연습합니다.` : "문법 콘텐츠가 아직 없습니다."), gp ? btn("문법 포인트 보기", () => ctx.go("#grammar"), "primary", "open-grammar") : null));
+  root.append(card("혼동 글자", muted(kn >= 2 ? `헷갈리는 글자 쌍 ${kn}개로 퀴즈를 풉니다.` : "혼동 글자 콘텐츠가 아직 없습니다. 팩을 가져오면 사용할 수 있습니다."), kn >= 2 ? btn("혼동 글자 퀴즈 시작", () => ctx.go("#kana"), "primary", "start-kana") : null));
+  root.append(card("영역별 학습", muted("이후 작업에서 제공됩니다.")));
   if (ctx.startDemo) root.append(card("개발용 레이아웃 데모", btn("퀴즈 데모 시작", ctx.startDemo)));
+}
+
+export function renderGrammarList(root: HTMLElement, ctx: PageCtx): void {
+  const m = ctx.model!;
+  root.append(h("h1", {}, "문법 학습"),
+    ...m.grammarPoints.map((g) => h("section", { class: "card" }, h("h2", {}, String((g.payload as { pattern: string }).pattern)), muted(String((g.payload as { meaningKo: string }).meaningKo)),
+      btn("설명 보기", () => ctx.go(`#gp/${encodeURIComponent(g.contentId)}`), "ghost"))),
+    btn("돌아가기", () => ctx.go("#learn"), "ghost"));
+}
+
+export function renderGrammarPoint(root: HTMLElement, ctx: PageCtx, id: string): void {
+  const m = ctx.model!;
+  const g = m.grammarPoints.find((x) => x.contentId === id);
+  if (!g) { root.append(h("h1", {}, "문법 학습"), muted("해당 문법 포인트를 찾을 수 없습니다."), btn("돌아가기", () => ctx.go("#grammar"), "ghost")); return; }
+  const p = g.payload as { pattern: string; attachment: string; meaningKo: string; nuanceKo: string; contrastPatterns: string[]; examples: { ja: string; ko: string }[] };
+  const n = m.pool.filter((q) => q.kind === "QUESTION" && q.payload.linkedContentId === id).length;
+  root.append(h("h1", {}, p.pattern));
+  root.append(
+    card("뜻과 접속", h("p", {}, `뜻: ${p.meaningKo}`), h("p", {}, `접속: ${p.attachment}`), h("p", {}, `뉘앙스: ${p.nuanceKo}`)),
+    ...(p.contrastPatterns.length ? [card("헷갈리는 문형", h("p", {}, p.contrastPatterns.join(", ")))] : []),
+    card("예문", h("ul", {}, ...p.examples.map((e) => h("li", {}, richText(e.ja), h("br", {}), h("span", { class: "muted" }, e.ko))))),
+    n ? btn(`연습하기 (${n}문제)`, () => ctx.go(`#gp-run/${encodeURIComponent(id)}`), "primary", "practice-point") : muted("이 문법의 연습 문제가 아직 없습니다."),
+    btn("돌아가기", () => ctx.go("#grammar"), "ghost"));
 }
 
 export function renderReport(root: HTMLElement): void {
