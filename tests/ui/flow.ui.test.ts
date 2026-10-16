@@ -36,7 +36,7 @@ async function newPage(ctx?: BrowserContext): Promise<{ page: Page; ctx: Browser
   return { page, ctx: c };
 }
 const eventsOf = (page: Page) => page.evaluate(async () => {
-  const db: IDBDatabase = await new Promise((r, j) => { const q = indexedDB.open("jlpt-app", 1); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
+  const db: IDBDatabase = await new Promise((r, j) => { const q = indexedDB.open("jlpt-app"); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
   const all: any[] = await new Promise((r) => { const q = db.transaction("events").objectStore("events").getAll(); q.onsuccess = () => r(q.result); });
   return all.map((x) => x.event as { type: string; payloadJson: string });
 });

@@ -12,8 +12,12 @@ import { ActiveTimer } from "./domain/activity";
 import { toQuizItem } from "./domain/content";
 import type { QuizEvent, QuizItem } from "./domain/quiz";
 import { todayKey } from "./domain/target";
+import { ConnectionManager } from "./google/connection";
+import { requestAccessToken } from "./google/gis";
+import { SEED_PACK } from "./content/seed";
 
 declare const __APP_VERSION__: string;
+declare const __GOOGLE_CLIENT_ID__: string;
 const SETTINGS_KEY = "jlpt.settings.hint";
 
 export function applySettings(doc: Document, s: UserSettings): void {
@@ -34,6 +38,12 @@ const routeOf = (hash: string): Route => {
   return t === "quiz" ? "learn" : t;
 };
 
+function toast(text: string): void {
+  const t = h("div", { class: "toast", role: "status" }, text);
+  document.body.append(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
 export function mount(root: HTMLElement, env: { protocol: string; hostname: string }): void {
   const mode = detectRuntimeMode(env.protocol, env.hostname);
   const settings = new SettingsStore(loadHint(), saveHint);
@@ -41,11 +51,15 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   let quiz: QuizShell | null = null;
   let storage: AppStorage | undefined;
   let model: AppModel | null = null;
+  let conn: ConnectionManager | null = null;
   let restoring = false;
   const clock = new ActiveTimer();
   let activity = "STUDY";
 
-  const refresh = async () => { model = await loadModel(storage, settings.get()); draw(); };
+  const isQuizRoute = () => ["diag-run", "study", "demo"].includes(routeOf(location.hash));
+  const isEditing = () => { const a = document.activeElement; return !!a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName); };
+  // Background updates (sync status, pulls) never tear down a running quiz or a half-typed form.
+  const refresh = async (force = true) => { model = await loadModel(storage, settings.get()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
   const go = (hash: string) => { if (location.hash === hash) draw(); else location.hash = hash; };
 
   const flushClock = (): void => {
@@ -69,7 +83,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
 
   const ctx: PageCtx = {
     mode, settings, version: __APP_VERSION__, availableLevels: [DEFAULT_TARGET_LEVEL],
-    get model() { return model; }, get storage() { return storage; }, go,
+    get model() { return model; }, get storage() { return storage; }, get conn() { return conn; }, go,
     startDemo: mode === "LOCALHOST_DEV" ? () => { location.hash = "#demo"; } : undefined,
     setTarget: async (level: Level, year: number, month: number) => {
       settings.set({ targetLevel: level });
@@ -131,12 +145,19 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   });
   addEventListener("hashchange", draw);
   for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => clock.touch(Date.now()), { passive: true });
-  document.addEventListener("visibilitychange", () => { if (document.hidden) { clock.pause(Date.now()); flushClock(); } });
-  addEventListener("pagehide", () => { clock.pause(Date.now()); flushClock(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) { clock.pause(Date.now()); flushClock(); void conn?.syncNow("hidden"); } });
+  addEventListener("pagehide", () => { clock.pause(Date.now()); flushClock(); void conn?.syncNow("end"); });
+  addEventListener("online", () => { void conn?.syncNow("manual"); });
 
   draw();
   AppStorage.init().then(async (st) => {
     storage = st;
+    const testId = mode === "LOCALHOST_DEV" ? (window as unknown as { __JLPT_TEST_CLIENT_ID__?: string }).__JLPT_TEST_CLIENT_ID__ : undefined;
+    conn = new ConnectionManager({
+      mode, clientId: testId ?? __GOOGLE_CLIENT_ID__, storage: st, seed: SEED_PACK, requestToken: (id) => requestAccessToken(id),
+      onChange: () => { void refresh(false); }, onRemoteEvents: (n) => { if (n > 0) toast(`다른 기기의 기록 ${n}건을 가져왔습니다.`); },
+    });
+    await conn.load();
     const projected = await st.projectSettings();
     if (projected) { restoring = true; settings.set(projected); restoring = false; }
     await refresh();

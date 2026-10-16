@@ -1,4 +1,5 @@
 import type { SyncEvent } from "./events";
+import type { ContentRecord } from "../../../shared/schema";
 
 export type SyncStatus = "PENDING" | "SYNCED";
 export interface StoredEvent { event: SyncEvent; status: SyncStatus; syncedAt?: string }
@@ -7,12 +8,15 @@ export interface StoredEvent { event: SyncEvent; status: SyncStatus; syncedAt?: 
 export interface LocalStore {
   readonly kind: "indexeddb" | "memory";
   /** Adds the event as PENDING. Same id + same checksum is a no-op; another checksum throws IntegrityConflictError. */
-  appendEvent(e: SyncEvent): Promise<"ADDED" | "DUPLICATE">;
+  appendEvent(e: SyncEvent, status?: SyncStatus): Promise<"ADDED" | "DUPLICATE">;
   listEvents(): Promise<StoredEvent[]>;
   listPending(limit?: number): Promise<SyncEvent[]>;
   markSynced(eventIds: string[], at: string): Promise<void>;
   getMeta<T = unknown>(key: string): Promise<T | undefined>;
   setMeta(key: string, value: unknown): Promise<void>;
+  /** Content cache (rows pulled from the sheet or imported). Key: contentId@contentVersion. */
+  putContent(records: ContentRecord[]): Promise<void>;
+  listContent(): Promise<ContentRecord[]>;
   /** Explicit, user-confirmed deletion only. */
   clearAll(): Promise<void>;
 }

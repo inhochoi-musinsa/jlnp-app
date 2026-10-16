@@ -4,9 +4,7 @@ import type { AppendRange, RemoteEventLog } from "./interface";
 
 export type MockFailure = "LOST_RESPONSE" | "HTTP_5XX" | "HTTP_429" | "HTTP_401" | "HTTP_403" | "HTTP_404" | "OFFLINE";
 
-export class MockHttpError extends Error {
-  constructor(readonly status: number | "OFFLINE", message: string) { super(message); }
-}
+import { GoogleError, mapHttpError } from "../google/errors";
 
 const COLS = SHEET_HEADERS.EVENTS;
 const toRow = (e: SyncEvent): string[] => COLS.map((c) => String((e as unknown as Record<string, unknown>)[c]));
@@ -30,8 +28,9 @@ export class MockSheetsAdapter implements RemoteEventLog {
     const f = this.queue[0];
     if (!f || f === "LOST_RESPONSE") return undefined;
     this.queue.shift();
-    const map: Record<string, [number | "OFFLINE", string]> = { HTTP_5XX: [503, "server error"], HTTP_429: [429, "quota"], HTTP_401: [401, "token expired"], HTTP_403: [403, "forbidden"], HTTP_404: [404, "not found"], OFFLINE: ["OFFLINE", "network"] };
-    throw new MockHttpError(...map[f]!);
+    if (f === "OFFLINE") throw new GoogleError("OFFLINE", "network");
+    const status = { HTTP_5XX: 503, HTTP_429: 429, HTTP_401: 401, HTTP_403: 403, HTTP_404: 404 }[f];
+    throw mapHttpError(status, null, "write");
   }
 
   async appendEvents(events: SyncEvent[]): Promise<AppendRange> {
@@ -40,7 +39,7 @@ export class MockSheetsAdapter implements RemoteEventLog {
     const first = this.rows.length + 1;
     for (const e of events) this.rows.push(toRow(e));
     const range = { firstRow: first, lastRow: this.rows.length };
-    if (this.queue[0] === "LOST_RESPONSE") { this.queue.shift(); throw new MockHttpError("OFFLINE", "response lost after the write was applied"); }
+    if (this.queue[0] === "LOST_RESPONSE") { this.queue.shift(); throw new GoogleError("OFFLINE", "response lost after the write was applied"); }
     return range;
   }
   async readEventRows(firstRow: number, lastRow: number): Promise<SyncEvent[]> {

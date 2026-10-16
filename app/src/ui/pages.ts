@@ -5,6 +5,7 @@ import { h } from "./dom";
 import type { AppStorage } from "../storage/session";
 import { applyImport, backupFileName, exportBackup, previewImport, type ImportPreview } from "../storage/backup";
 import type { AppModel } from "../state";
+import type { ConnectionManager } from "../google/connection";
 import { DOMAIN_LABEL, DOMAINS } from "../domain/planner";
 import { ROUTE_LABEL, DIAG_GROUPS } from "../domain/diagnostic";
 import { daysBetween, effectiveDate, eligibleDays, isPastSession, maximumRemainingMinutes } from "../domain/target";
@@ -16,6 +17,7 @@ export interface PageCtx {
   availableLevels: Level[];
   model: AppModel | null;
   storage?: AppStorage;
+  conn?: ConnectionManager | null;
   go: (hash: string) => void;
   startDemo?: () => void;
   setTarget: (level: Level, year: number, month: number) => Promise<void>;
@@ -40,6 +42,25 @@ export function targetSummary(m: AppModel): { text: string; detail: string | nul
   return { text: `${t.targetYear}년 ${t.targetMonth}월 (${status})`, detail: `남은 ${days}일 · 최대 학습 가능 시간 ${maximumRemainingMinutes(days) / 60}시간 (하루 60분 기준 산술 상한)` };
 }
 
+export function syncLabel(ctx: PageCtx): { text: string; warn: boolean } {
+  const c = ctx.conn, m = ctx.model;
+  if (ctx.mode === "LOCAL_FILE") return { text: "로컬 모드 · 시트에 저장되지 않음", warn: true };
+  if (!c || c.state.kind !== "READY") return { text: c?.state.kind === "NO_CLIENT_ID" ? "시트 연결 전 (Client ID 미설정)" : "시트 연결 전", warn: false };
+  const st = c.syncStatus;
+  const pending = st?.pending ?? m?.pending ?? 0;
+  switch (st?.state) {
+    case "NEEDS_AUTH": return { text: "다시 연결 필요", warn: true };
+    case "OFFLINE": return { text: "오프라인", warn: true };
+    case "READ_ONLY": return { text: "읽기 전용", warn: true };
+    case "RATE_LIMITED": return { text: "동기화 지연", warn: true };
+    case "ERROR": return { text: "동기화 오류", warn: true };
+    case "SYNCING": return { text: "동기화 중…", warn: false };
+    default:
+      // "동기화 완료" is shown only after a read-back verified ACK and nothing is pending.
+      return pending === 0 && st?.lastSyncedAt ? { text: "동기화 완료", warn: false } : { text: `동기화 전 ${pending}건`, warn: false };
+  }
+}
+
 export function renderHome(root: HTMLElement, ctx: PageCtx): void {
   const m = ctx.model;
   root.append(h("h1", {}, "홈"));
@@ -58,9 +79,14 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
   const t = targetSummary(m);
   root.append(card("목표", h("p", { id: "target-text" }, t.text), t.detail ? muted(t.detail) : null, btn("목표 변경", () => ctx.go("#settings"), "ghost")));
   // 5. 동기화
+  const lab = syncLabel(ctx);
+  const st = ctx.conn?.syncStatus;
   root.append(card("동기화",
-    h("span", { class: ctx.mode === "LOCAL_FILE" ? "badge warn" : "badge", id: "sync-badge" }, ctx.mode === "LOCAL_FILE" ? "로컬 모드 · 시트에 저장되지 않음" : "시트 연결 전"),
+    h("span", { class: lab.warn ? "badge warn" : "badge", id: "sync-badge" }, lab.text),
+    st?.message ? muted(st.message) : null,
     muted(m.pending ? `동기화 전 ${m.pending}건 (기기에만 저장됨)` : "동기화 전 기록 없음"),
+    ctx.conn?.state.kind === "READY" ? btn("지금 동기화", () => { void ctx.conn!.syncNow("manual"); }, "ghost", "sync-now") : null,
+    st?.state === "NEEDS_AUTH" ? btn("다시 연결", () => { void ctx.conn!.reconnect(); }, "primary", "reconnect") : null,
     ctx.storage && !ctx.storage.persistent ? warn("현재 실행에서만 유지됨 — 백업 권장") : null));
 }
 
@@ -174,6 +200,7 @@ export function renderSettings(root: HTMLElement, ctx: PageCtx): void {
       segmented("furi", "후리가나", "furiganaMode", FURIGANA_MODES, FURI_LABEL, s),
       segmented("theme", "화면 색", "theme", THEMES, THEME_LABEL, s),
       muted("글자는 화면에 맞춰 자동으로 줄어들지 않습니다.")),
+    connectionCard(ctx),
     backupCard(ctx),
     card("앱 정보", h("p", {}, `버전 v${ctx.version}`), h("p", {}, `실행 환경: ${runtimeModeLabel(ctx.mode)}`)),
   );
@@ -208,4 +235,23 @@ function backupCard(ctx: PageCtx): HTMLElement {
     } }, "JSON 내보내기"),
     h("label", { for: "import-file" }, "백업 가져오기 "), file, out,
     muted("백업에는 풀이 기록과 설정만 들어 있고 토큰·비밀번호는 포함되지 않습니다."));
+}
+
+function connectionCard(ctx: PageCtx): HTMLElement {
+  const c = ctx.conn;
+  if (ctx.mode === "LOCAL_FILE") return card("시트 연결", warn("로컬 파일 모드에서는 Google 로그인을 지원하지 않습니다. Google Sheets 연결은 HTTPS 실행이 필요합니다."), muted("진단과 연습은 할 수 있지만 기록은 이 기기에만 저장됩니다. 백업을 자주 내보내세요."));
+  if (!c) return card("시트 연결", muted("저장소를 준비하는 중입니다."));
+  const s = c.state;
+  const url = h("input", { id: "sheet-url", type: "url", placeholder: "https://docs.google.com/spreadsheets/d/…", "aria-label": "구글 시트 주소", style: "width:100%" }) as HTMLInputElement;
+  const body: Kid[] = [];
+  switch (s.kind) {
+    case "NO_CLIENT_ID": body.push(warn("Google Client ID가 이 빌드에 설정되어 있지 않습니다. config.local.json의 clientId를 채우고 다시 빌드하세요."), muted("연결하기 전까지 기록은 이 기기에만 저장됩니다.")); break;
+    case "DISCONNECTED": body.push(muted("Google 계정으로 연결하면 학습 기록이 내 구글 시트에 저장됩니다. 이 앱은 '스프레드시트' 권한(내 모든 구글 시트를 읽고 쓸 수 있는 넓은 권한)을 요청하지만, 입력한 시트 하나만 사용합니다."), btn(c.bound ? "다시 연결" : "Google 계정으로 연결", () => { void c.connect(); }, "primary", "gconnect")); break;
+    case "AWAITING_URL": body.push(h("label", { for: "sheet-url" }, "시트 주소를 붙여 넣으세요"), url, btn("연결 확인", () => { void c.submitUrl(url.value); }, "primary", "sheet-check"), muted("처음에는 테스트용 빈 시트로 시작하세요.")); break;
+    case "NEEDS_INIT": body.push(h("p", {}, "이 시트에 _JLPT_* 전용 탭을 생성합니다. 기존 탭은 수정하지 않습니다."), muted(`시트: ${s.inspection.meta.title} (기존 탭 ${s.inspection.meta.tabs.filter((t) => !t.title.startsWith("_JLPT_")).length}개는 그대로 둡니다)`), btn("초기화 승인", () => { void c.confirmInit(); }, "primary", "init-approve"), btn("취소", () => { void c.disconnect(); }, "ghost")); break;
+    case "READY": body.push(h("p", { id: "conn-ready" }, "시트에 연결되었습니다."), btn("지금 동기화", () => { void c.syncNow("manual"); }, "ghost", "sync-now-2"), btn("연결 해제", () => { void c.disconnect(); }, "ghost", "gdisconnect"), muted("연결을 해제해도 시트의 데이터와 이 기기의 기록은 삭제되지 않습니다.")); break;
+    case "ERROR": body.push(warn(s.message), btn(c.bound ? "다시 연결" : "다시 시도", () => { void (c.bound ? c.reconnect() : c.connect()); }, "primary", "gretry")); break;
+    case "LOCAL_FILE": break;
+  }
+  return card("시트 연결", h("div", { id: "conn-body", "aria-live": "polite" }, ...body));
 }

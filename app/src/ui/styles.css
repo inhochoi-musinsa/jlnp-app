@@ -53,3 +53,4 @@ ruby rt{font-size:.55em}
 .brief{border-top:1px solid var(--border);margin-top:8px;padding-top:6px}
 .big{font-size:1.2em;font-weight:700;margin:4px 0}
 details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
+.toast{position:fixed;left:16px;right:16px;bottom:72px;margin:0 auto;max-width:560px;background:var(--fg);color:var(--bg);padding:10px 14px;border-radius:10px;z-index:10}

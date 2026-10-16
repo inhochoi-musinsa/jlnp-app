@@ -27,7 +27,7 @@ describe("T04 storage in a real browser", () => {
     await page.getByLabel("크게", { exact: true }).check();
     await page.waitForTimeout(300);
     const n = await page.evaluate(async () => {
-      const db: IDBDatabase = await new Promise((r, j) => { const q = indexedDB.open("jlpt-app", 1); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
+      const db: IDBDatabase = await new Promise((r, j) => { const q = indexedDB.open("jlpt-app"); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
       const all: any[] = await new Promise((r) => { const q = db.transaction("events").objectStore("events").getAll(); q.onsuccess = () => r(q.result); });
       return all.map((x) => x.event.type);
     });

@@ -8,6 +8,8 @@ import type { EventType } from "../../../shared/sheetSchema";
 export class AppStorage {
   profileId = "";
   deviceId = "";
+  /** Called after every committed local event (the app wires this to the sync coordinator). */
+  onRecorded?: (e: SyncEvent) => void;
   private seq = 0;
   private constructor(readonly store: LocalStore, readonly probe: StorageProbe) {}
 
@@ -35,7 +37,26 @@ export class AppStorage {
     await this.store.setMeta("deviceSeq", this.seq);
     const e = createEvent({ profileId: this.profileId, deviceId: this.deviceId, deviceSeq: this.seq, type, entityId, payload });
     await this.store.appendEvent(e);
+    this.onRecorded?.(e);
     return e;
+  }
+
+  /** True while the device holds nothing but the automatic first-run events (safe to join another profile). */
+  async isPristine(): Promise<boolean> {
+    return (await this.store.listEvents()).every((s) => s.event.type === "PROFILE_CREATED" || s.event.type === "SETTINGS_UPDATED" || s.event.type === "SHEET_BOUND");
+  }
+
+  /** Joins the profile stored in the sheet (new device). Drops the throw-away first-run events. */
+  async adoptProfile(profileId: string): Promise<void> {
+    if (profileId === this.profileId) return;
+    const keepMeta = { deviceId: this.deviceId, deviceSeq: this.seq };
+    const content = await this.store.listContent();
+    await this.store.clearAll();
+    await this.store.setMeta("deviceId", keepMeta.deviceId);
+    await this.store.setMeta("deviceSeq", keepMeta.deviceSeq);
+    await this.store.putContent(content);
+    this.profileId = profileId;
+    await this.store.setMeta("profileId", profileId);
   }
 
   async pendingCount(): Promise<number> { return (await this.store.listPending()).length; }

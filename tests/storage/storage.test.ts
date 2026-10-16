@@ -4,7 +4,8 @@ import { createEvent, checkEvent, dedupeEvents, IntegrityConflictError, replayOr
 import { IndexedDbStore, MemoryStore, openBestStore } from "../../app/src/storage/local";
 import { AppStorage } from "../../app/src/storage/session";
 import { applyImport, containsSecretKeys, exportBackup, previewImport } from "../../app/src/storage/backup";
-import { MockHttpError, MockSheetsAdapter } from "../../app/src/storage/mockSheets";
+import { MockSheetsAdapter } from "../../app/src/storage/mockSheets";
+import { GoogleError } from "../../app/src/google/errors";
 import type { LocalStore } from "../../app/src/storage/interface";
 
 const mk = (n: number, over: Record<string, unknown> = {}) =>
@@ -171,10 +172,10 @@ describe("MockSheetsAdapter (MOCK ONLY, not evidence of real Google behaviour)",
   it("failure injection: 5xx before write, lost response after write", async () => {
     const m = new MockSheetsAdapter();
     m.failNext("HTTP_5XX");
-    await expect(m.appendEvents([mk(1)])).rejects.toBeInstanceOf(MockHttpError);
+    await expect(m.appendEvents([mk(1)])).rejects.toBeInstanceOf(GoogleError);
     expect(await m.rowCount()).toBe(0);
     m.failNext("LOST_RESPONSE");
-    await expect(m.appendEvents([mk(1)])).rejects.toBeInstanceOf(MockHttpError);
+    await expect(m.appendEvents([mk(1)])).rejects.toBeInstanceOf(GoogleError);
     expect(await m.rowCount()).toBe(1); // written although the caller saw an error
   });
 });
