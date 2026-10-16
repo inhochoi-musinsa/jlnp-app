@@ -1,0 +1,9 @@
+node_modules/
+.env.local
+config.local.json
+content/
+packs/
+audio/
+site/
+*.log
+.DS_Store
