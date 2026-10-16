@@ -2,6 +2,15 @@
 
 Sections: Added / Changed / Fixed / Migrated / Content / Compatibility / Known Issues
 
+## Unreleased (T14 listening)
+### Added
+- Listening player (generated file > recorded override > browser voice), replay limit, source badge, TTS limit notice, script/replay in feedback.
+- Dictation (듣고 쓰기) with kana diff; `content:audio`; settings > 고급.
+### Fixed
+- A late settings refresh could redraw a running quiz.
+### Known Issues
+- Real TTS synthesis BLOCKED(TTS); Android playback BLOCKED(DEVICE).
+
 ## 1.0.0 (release candidate, not tagged)
 ### Added
 - Review engine (5 stages, cards, 25-minute rule, weak review), grammar principles, confusing-letter quiz.

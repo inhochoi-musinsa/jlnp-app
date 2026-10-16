@@ -1,5 +1,6 @@
 import { QuizSession, type QuizChoice, type QuizEvent, type QuizItem } from "../domain/quiz";
 import { h, richText } from "./dom";
+import { ListeningPlayer, type PlayerDeps } from "./audio";
 
 export interface QuizOptions {
   context?: "study" | "assess";
@@ -11,6 +12,8 @@ export interface QuizOptions {
   onReport?: (item: QuizItem) => void;
   /** Shown as "offset+index+1 / total" (used when resuming a longer set). */
   progress?: { offset: number; total: number };
+  /** Listening items: replay limit, browser-voice fallback and the callback that records source and plays. */
+  audio?: { maxPlays: number | null; allowBrowserTts: boolean; deps?: PlayerDeps; onPlay?: (item: QuizItem, source: "GENERATED_FILE" | "RECORDED" | "BROWSER_TTS", plays: number) => void };
   /** Called right after the answer is submitted (before feedback is drawn). */
   afterSubmit?: (item: QuizItem, isCorrect: boolean, session: QuizSession) => void;
 }
@@ -29,6 +32,7 @@ export class QuizShell {
   private detailChoiceId: string | null = null;
   private introSeen = new Set<string>();
   private paneMode: "passage" | "explain" = "passage";
+  private players = new Map<string, ListeningPlayer>();
   private resizeObs?: ResizeObserver;
 
   constructor(private host: HTMLElement, items: QuizItem[], private opts: QuizOptions = {}) {
@@ -43,7 +47,18 @@ export class QuizShell {
     }
   }
 
-  destroy(): void { this.resizeObs?.disconnect(); this.host.textContent = ""; }
+  destroy(): void { this.resizeObs?.disconnect(); for (const p of this.players.values()) p.stop(); this.host.textContent = ""; }
+
+  private playerFor(item: QuizItem): ListeningPlayer | null {
+    if (!item.audio) return null;
+    let p = this.players.get(item.id);
+    if (!p) {
+      const a = this.opts.audio;
+      p = new ListeningPlayer(item.audio, item.audio.listeningId, { maxPlays: a?.maxPlays ?? null, allowBrowserTts: a?.allowBrowserTts ?? false, deps: a?.deps, onPlay: (src, n) => a?.onPlay?.(item, src, n) });
+      this.players.set(item.id, p);
+    }
+    return p;
+  }
 
   private render(): void {
     const s = this.session;
@@ -53,7 +68,9 @@ export class QuizShell {
     const feedback = s.phase === "FEEDBACK";
     this.pageIndex = 0;
     this.paneMode = feedback ? "explain" : "passage";
-    this.root.classList.toggle("has-qline", !!item.passage);
+    this.root.classList.toggle("has-qline", !!(item.passage || item.audio));
+    const player = this.playerFor(item);
+    if (player && feedback) player.maxPlays = null; // after answering, listening again is always allowed
     if (s.phase === "QUESTION" && item.intro && !this.introSeen.has(item.id)) { this.renderIntro(item); return; }
 
     const header = h("header", { class: "quiz-head" },
@@ -75,7 +92,7 @@ export class QuizShell {
       actions.append(h("button", { class: "primary", type: "button", id: "next", onclick: () => { s.next(); this.detailChoiceId = null; this.render(); } }, "다음 계속하기"));
     }
     // A passage item keeps its (short) question line pinned above the four choices, in question and feedback alike.
-    const qline = item.passage ? h("div", { class: "qline", id: "qline" }, richText(item.stem)) : null;
+    const qline = item.passage || item.audio ? h("div", { class: "qline", id: "qline" }, richText(item.stem)) : null;
     this.root.append(header, pane, ...(qline ? [qline] : []), choices, actions);
     this.fillPane(feedback);
   }
@@ -128,6 +145,11 @@ export class QuizShell {
       return out;
     }
     const sentences = (t: string) => t.split(/(?<=[。！？\n])/u).map((x) => x.trim()).filter(Boolean);
+    if (item.audio && feedback && this.paneMode === "passage") {
+      out.push(h("p", { class: "chunk strong" }, "스크립트"));
+      for (const l of this.playerFor(item)!.scriptLines()) out.push(h("p", { class: "chunk" }, l));
+      return out;
+    }
     if (item.passage && (!feedback || this.paneMode === "passage")) {
       // the passage's own pages are kept: every content page starts a new pane page (long pages are split further)
       item.passage.pages.forEach((page, pi) => sentences(page).forEach((sent, si) => out.push(h("p", { class: "chunk", "data-brk": si === 0 && pi > 0 ? "1" : null }, richText(sent)))));
@@ -152,6 +174,13 @@ export class QuizShell {
   private fillPane(feedback: boolean): void {
     const body = this.root.querySelector<HTMLElement>("#pane-body")!;
     const pager = this.root.querySelector<HTMLElement>("#pager")!;
+    const cur = this.session.item;
+    if (cur?.audio && !feedback && !this.root.classList.contains("is-intro")) {
+      // the audio panel replaces the passage: nothing to read before listening
+      pager.hidden = true; pager.textContent = ""; this.pages = [[]];
+      body.textContent = ""; body.append(this.playerFor(cur)!.render());
+      return;
+    }
     const chunks = this.chunks(feedback);
     const fits = () => body.scrollHeight <= body.clientHeight + 1;
     const paginate = (reservePager: boolean): HTMLElement[][] => {
@@ -171,7 +200,7 @@ export class QuizShell {
       if (cur.length) pages.push(cur);
       return pages;
     };
-    const toggle = feedback && !!this.session.item?.passage;
+    const toggle = feedback && !!(this.session.item?.passage || this.session.item?.audio);
     let pages = paginate(toggle);
     if (!toggle && pages.length > 1) pages = paginate(true);
     this.pages = pages;
@@ -184,10 +213,11 @@ export class QuizShell {
     for (const c of this.pages[this.pageIndex] ?? []) body.append(c);
     pager.textContent = "";
     const item = this.session.item;
-    const toggle = this.session.phase === "FEEDBACK" && !!item?.passage;
+    const toggle = this.session.phase === "FEEDBACK" && !!(item?.passage || item?.audio);
     if (toggle) {
       pager.hidden = false;
-      pager.append(h("button", { class: "ghost", type: "button", id: "toggle-passage", onclick: () => { this.paneMode = this.paneMode === "passage" ? "explain" : "passage"; this.pageIndex = 0; this.fillPane(true); } }, this.paneMode === "passage" ? "해설 보기" : "지문 보기"));
+      pager.append(h("button", { class: "ghost", type: "button", id: "toggle-passage", onclick: () => { this.paneMode = this.paneMode === "passage" ? "explain" : "passage"; this.pageIndex = 0; this.fillPane(true); } }, this.paneMode === "passage" ? "해설 보기" : item?.audio ? "스크립트 보기" : "지문 보기"));
+      if (item?.audio) pager.append(h("button", { class: "ghost", type: "button", id: "replay-audio", onclick: () => { void this.playerFor(item)!.play(); } }, "다시 듣기"));
     }
     if (this.pages.length > 1) {
       pager.hidden = false;

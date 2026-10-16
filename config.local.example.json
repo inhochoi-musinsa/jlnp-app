@@ -8,6 +8,7 @@
     "generate": { "provider": "headless", "model": "sonnet" },
     "verify":   { "provider": "headless", "model": "opus" }
   },
+  "tts": { "engine": "google", "speed": 1.0 },
   "headless": { "concurrency": 2, "timeoutMs": 180000, "backoffMs": 30000 },
   "api": { "concurrency": 4 }
 }

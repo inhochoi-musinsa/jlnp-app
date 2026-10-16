@@ -121,8 +121,9 @@ export function validatePayload(kind: Kind, p: Record<string, any>): Issue[] {
     case "LISTENING":
       need((LISTENING_TASKS as readonly string[]).includes(p.taskType), "taskType", "unknown taskType");
       need(Array.isArray(p.segments) && p.segments.length >= 1 && p.segments.every((s: any) => isObj(s) && ["M", "F", "N"].includes(s.speaker) && isStr(s.text)), "segments", "segments required");
-      need(p.audio === undefined || (isObj(p.audio) && (AUDIO_SOURCES as readonly string[]).includes(p.audio.source)), "audio", "invalid audio");
-      need(isStr(p.questionId), "questionId", "required");
+      need(p.audio === undefined || (isObj(p.audio) && (AUDIO_SOURCES as readonly string[]).includes(p.audio.source) && /^[0-9a-f]{16}$/.test(String(p.audio.key)) && isStr(p.audio.engine) && isStr(p.audio.voice) && typeof p.audio.speed === "number"), "audio", "invalid audio (key must be 16 hex chars)");
+      // a dictation item (short utterance to write down) has no question; every other listening item needs one
+      need(p.dictation === true || isStr(p.questionId), "questionId", "required unless dictation");
       break;
   }
   return out;

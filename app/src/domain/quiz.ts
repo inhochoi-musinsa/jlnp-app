@@ -8,6 +8,8 @@ export interface QuizItem {
   stimulusId?: string;
   /** record to report/mark as seen when the item is a card made from another record (e.g. the linked grammar question) */
   refId?: string;
+  /** Listening item: the audio panel replaces the passage; the script is shown in feedback. */
+  audio?: { listeningId: string; ref?: { key: string; source: "GENERATED_FILE" | "RECORDED" | "BROWSER_TTS"; engine: string; voice: string; speed: number }; segments: { speaker: "M" | "F" | "N"; text: string; reading?: string; pauseMs?: number }[]; taskType: string };
   /** Reading passage: shown paged above the fixed question line; its page breaks are kept. */
   passage?: { pages: string[]; kind?: string };
   /** lines shown once before the question (new grammar point principle) */

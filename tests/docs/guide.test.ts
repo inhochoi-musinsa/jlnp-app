@@ -9,8 +9,8 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : p.endsWith(".ts") ? [p] : []; });
 const appSource = walk(join(root, "app/src")).map((f) => readFileSync(f, "utf8")).join("\n");
 
-// commands the guide mentions that belong to later tasks (T14 audio, triage); listed explicitly so nothing else slips in
-const PLANNED = new Set(["content:audio", "content:triage"]);
+// commands the guide mentions that belong to later tasks (triage); listed explicitly so nothing else slips in
+const PLANNED = new Set(["content:triage"]);
 
 describe("T09: the guide matches the product", () => {
   it("every npm command in the guide exists (or is explicitly marked as planned)", () => {
@@ -24,7 +24,7 @@ describe("T09: the guide matches the product", () => {
     const labels = [
       "Google 계정으로 연결", "연결 확인", "초기화 승인", "지금 동기화", "다시 연결", "연결 해제", "배치 진단 시작", "진단 이어서 하기", "진단 시작", "이어서 풀기",
       "목표 변경", "공식 시험일 저장", "공식 시험일 입력 (공고 확인 후)", "정답 확인", "다음 계속하기", "문제 신고", "JSON 내보내기", "가져오기 승인", "팩 내보내기",
-      "진도 내보내기", "신고 목록 내보내기", "미검증 콘텐츠 포함 (연습에만 사용)", "그래도 추가", "도움말", "콘텐츠 추가 필요", "남은 학습 분량", "복습 시작", "약점 복습 시작", "시작 전 안내", "문법 포인트 보기", "설명 보기", "연습하기", "문제 풀기", "혼동 글자 퀴즈 시작", "지문 읽기", "지문 보기", "해설 보기",
+      "진도 내보내기", "신고 목록 내보내기", "미검증 콘텐츠 포함 (연습에만 사용)", "그래도 추가", "도움말", "콘텐츠 추가 필요", "남은 학습 분량", "복습 시작", "약점 복습 시작", "시작 전 안내", "문법 포인트 보기", "설명 보기", "연습하기", "문제 풀기", "혼동 글자 퀴즈 시작", "지문 읽기", "지문 보기", "해설 보기", "청해 시작", "듣고 쓰기 시작", "스크립트 보기", "다시 듣기", "청해 재생 횟수(연습)", "음원 파일이 없으면 브라우저 음성으로 재생",
     ];
     for (const l of labels) {
       expect(appSource, `app lacks "${l}"`).toContain(l);

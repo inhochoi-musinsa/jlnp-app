@@ -12,6 +12,7 @@ import { computeRunway, dailyIntake, READING_NEW_PER_DAY, type Runway } from "./
 import { buildQueue, observedSecondsPerCard, replayCards, wordStage, type CardState, type ReviewQueue, type Stage } from "./domain/srs";
 import { allCards, directionsFor } from "./domain/cards";
 import { kanaPairs } from "./domain/kana";
+import { dictationItems, listeningUnits, LISTENING_NEW_PER_DAY } from "./domain/listening";
 
 export interface AppModel {
   /** every stored row (all versions) */
@@ -43,6 +44,10 @@ export interface AppModel {
   /** next unseen reading passage (with its questions) and whether today's intake allows it */
   readingNext: { passage: ContentRecord; questions: ContentRecord[] } | null;
   readingToday: number;
+  /** next unseen listening items (today's intake already subtracted) and the dictation set */
+  listeningNext: { listening: ContentRecord; question: ContentRecord }[];
+  listeningToday: number;
+  dictation: ContentRecord[];
   review: ReviewQueue;
   secondsPerCard: number;
   newToday: number;
@@ -67,9 +72,11 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const diagItems = buildDiagnostic(records.filter((r) => effectiveStatus(r, fp) === "VERIFIED"), settings.targetLevel);
   const diag = diagnosticState(diagItems, events);
   const exposed = exposedContentIds(events, new Map(records.filter((r) => r.kind === "QUESTION").map((r) => [r.contentId, r.payload.stimulusId as string | undefined])));
-  const linkedToPoint = new Set(pool.filter((r) => r.kind === "QUESTION" && typeof r.payload.linkedContentId === "string" && pool.some((g) => g.kind === "GRAMMAR" && g.contentId === r.payload.linkedContentId)).map((r) => r.contentId));
-  // questions that belong to a grammar point are served through that point's review card instead
-  const studyQuestions = pool.filter((r) => r.kind === "QUESTION" && r.pool === "LEARN" && !exposed.has(r.contentId) && !linkedToPoint.has(r.contentId));
+  const ids = new Set(pool.map((r) => r.contentId));
+  const listeningQuestionIds = new Set(pool.filter((r) => r.kind === "LISTENING").map((r) => String(r.payload.questionId)));
+  const hasParent = (r: ContentRecord) => listeningQuestionIds.has(r.contentId) || [r.payload.linkedContentId, r.payload.stimulusId].some((x) => typeof x === "string" && ids.has(x));
+  // questions of a grammar point, passage or listening item are served through that parent, not as loose practice
+  const studyQuestions = pool.filter((r) => r.kind === "QUESTION" && r.pool === "LEARN" && !exposed.has(r.contentId) && !hasParent(r));
   let activeSecondsToday = 0;
   for (const e of events) {
     if (e.type !== "STUDY_INTERVAL_COMPLETED") continue;
@@ -103,23 +110,27 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
     const sid = JSON.parse(e.payloadJson).stimulusId as string | null | undefined;
     if (sid && !firstSeenDay.has(sid)) firstSeenDay.set(sid, todayKey(new Date(e.occurredAt), settings.timezone));
   }
-  const readingToday = [...firstSeenDay.values()].filter((d) => d === today).length;
+  const kindOf = new Map(pool.map((r) => [r.contentId, r.kind]));
+  const readingToday = [...firstSeenDay.entries()].filter(([id, d]) => d === today && kindOf.get(id) === "PASSAGE").length;
   const questionsOf = (p: ContentRecord) => pool.filter((q) => q.kind === "QUESTION" && q.payload.stimulusId === p.contentId).sort((a, b) => a.contentId.localeCompare(b.contentId));
   const unseenPassages = pool.filter((r) => r.kind === "PASSAGE" && r.pool === "LEARN" && !exposed.has(r.contentId) && questionsOf(r).length > 0).sort((a, b) => a.contentId.localeCompare(b.contentId));
   const readingNext = unseenPassages[0] && readingToday < READING_NEW_PER_DAY ? { passage: unseenPassages[0], questions: questionsOf(unseenPassages[0]) } : null;
+  const listeningToday = [...firstSeenDay.entries()].filter(([id, d]) => d === today && kindOf.get(id) === "LISTENING").length;
+  const listeningUnseen = listeningUnits(pool).filter((u) => !exposed.has(u.listening.contentId));
+  const listeningNext = listeningUnseen.slice(0, Math.max(0, LISTENING_NEW_PER_DAY - listeningToday));
   const sessionVocab = review.session.filter((c) => !isGrammarCard(c));
   const sessionGrammar = review.session.filter(isGrammarCard);
-  const available = Object.fromEntries(DOMAINS.map((d) => [d, (d === "GRAMMAR" && (studyQuestions.length > 0 || sessionGrammar.length > 0)) || (d === "VOCAB" && sessionVocab.length > 0) || (d === "READING" && !!readingNext)])) as Record<PlanDomain, boolean>;
+  const available = Object.fromEntries(DOMAINS.map((d) => [d, (d === "GRAMMAR" && (studyQuestions.length > 0 || sessionGrammar.length > 0)) || (d === "VOCAB" && sessionVocab.length > 0) || (d === "READING" && !!readingNext) || (d === "LISTENING" && listeningNext.length > 0)])) as Record<PlanDomain, boolean>;
   if (!available.GRAMMAR) notes.GRAMMAR = grammarPoints.length ? "오늘 복습·새 문법이 없음" : "콘텐츠 준비 중";
   if (!available.VOCAB && vocab.length >= 4) notes.VOCAB = "오늘 복습·새 카드가 없음";
   if (!available.READING && unseenPassages.length) notes.READING = "오늘의 새 지문은 이미 읽음";
   const plan = route
-    ? makePlan({ route, activeSecondsToday, dailyBudgetMinutes: settings.dailyBudgetMinutes, available, capacityMinutes: { GRAMMAR: Math.ceil((studyQuestions.length * SECONDS_PER_QUESTION + sessionGrammar.length * secondsPerCard) / 60), VOCAB: Math.ceil((sessionVocab.length * secondsPerCard) / 60), READING: readingNext ? Math.ceil((readingNext.questions.length * SECONDS_PER_QUESTION) / 60) : 0 } })
+    ? makePlan({ route, activeSecondsToday, dailyBudgetMinutes: settings.dailyBudgetMinutes, available, capacityMinutes: { GRAMMAR: Math.ceil((studyQuestions.length * SECONDS_PER_QUESTION + sessionGrammar.length * secondsPerCard) / 60), VOCAB: Math.ceil((sessionVocab.length * secondsPerCard) / 60), READING: readingNext ? Math.ceil((readingNext.questions.length * SECONDS_PER_QUESTION) / 60) : 0, LISTENING: Math.ceil((listeningNext.length * 90) / 60) } })
     : null;
   const unseenItems = (grammar: boolean) => new Set(cards.filter((c) => isGrammarCard(c) === grammar && cards.filter((x) => x.contentId === c.contentId).every((x) => x.reviews === 0 && x.dueAt === null)).map((c) => c.contentId)).size;
   const runway = computeRunway(pool, events, route, { unseenVocabWords: unseenItems(false), unseenGrammarPoints: unseenItems(true) });
   return {
-    cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, readingNext, readingToday, review, secondsPerCard, newToday, vocabStages, vocab,
+    cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, readingNext, readingToday, listeningNext, listeningToday, dictation: dictationItems(pool), review, secondsPerCard, newToday, vocabStages, vocab,
     rows, records, pool, flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), diag, today, activeSecondsToday,
     pending: storage ? (await storage.pendingCount()) : 0, plan, exposed, studyQuestions, notes,
   };

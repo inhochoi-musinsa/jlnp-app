@@ -95,6 +95,14 @@ export function lintRecord(rec: ContentRecord): Issue[] {
     if ((p.domain === "GRAMMAR_FORM" || p.domain === "TEXT_GRAMMAR") && endingOnlySolvable(String(p.stem), texts))
       add("GRAMMAR_ENDING_ONLY", "payload.stem", "choices differ only by ending and stem has < 2 context cues");
   }
+  if (rec.kind === "LISTENING") {
+    const segs = (p.segments ?? []) as { text: string; reading?: string }[];
+    if (segs.length > 14) add("LISTENING_LONG", "payload.segments", "at most 14 segments");
+    if (segs.some((x) => x.text.length > 160)) add("LISTENING_LONG", "payload.segments", "a segment is longer than 160 characters");
+    if (segs.reduce((a, x) => a + x.text.length, 0) > 1200) add("LISTENING_LONG", "payload.segments", "script is longer than 1,200 characters");
+    for (const x of segs) if (x.reading !== undefined && !/^[\u3041-\u3096\u30A1-\u30FA\u30FC、。！？\s]+$/u.test(x.reading)) add("READING_CHARS", "payload.segments.reading", "reading must be kana only");
+    if (p.dictation === true && (segs.length !== 1 || !segs[0]!.reading)) add("DICTATION_SHAPE", "payload.segments", "a dictation item is exactly one segment with a kana reading");
+  }
   if (rec.kind === "LISTENING" && p.audio && p.audio.source === "BROWSER_TTS" && rec.pool === "ASSESS") add("ASSESS_BROWSER_TTS", "payload.audio", "ASSESS items must not rely on BROWSER_TTS");
   return out;
 }

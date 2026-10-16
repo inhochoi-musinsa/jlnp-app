@@ -4,14 +4,16 @@ import type { Route } from "./diagnostic";
 
 export type Area = "KANA" | "VOCAB" | "GRAMMAR" | "READING" | "LISTENING";
 /** Areas that can actually be studied in this app version; extended as features ship (reading v2, listening v2). */
-export const ACTIVE_AREAS: Area[] = ["VOCAB", "GRAMMAR", "READING"];
+export const ACTIVE_AREAS: Area[] = ["VOCAB", "GRAMMAR", "READING", "LISTENING"];
 export const DAILY_NEW_CAP: Record<Route, number> = { KANA_FOUNDATION: 5, FOUNDATION: 10, TARGET_FOCUS: 15 };
 export const RUNWAY_WARN_DAYS = 14;
 /** New grammar points per day (principles take time). `[실무 제안]` */
 export const GRAMMAR_NEW_PER_DAY = 1;
 /** New reading passages per day (each comes with its questions). `[실무 제안]` */
 export const READING_NEW_PER_DAY = 1;
-export const dailyIntake = (route: Route | null): Record<Area, number> => ({ KANA: 0, VOCAB: DAILY_NEW_CAP[route ?? "FOUNDATION"], GRAMMAR: GRAMMAR_NEW_PER_DAY, READING: READING_NEW_PER_DAY, LISTENING: 0 });
+/** New listening items per day (each is a short script + one question). `[실무 제안]` */
+export const LISTENING_NEW_PER_DAY_INTAKE = 2;
+export const dailyIntake = (route: Route | null): Record<Area, number> => ({ KANA: 0, VOCAB: DAILY_NEW_CAP[route ?? "FOUNDATION"], GRAMMAR: GRAMMAR_NEW_PER_DAY, READING: READING_NEW_PER_DAY, LISTENING: LISTENING_NEW_PER_DAY_INTAKE });
 
 const DOMAIN_AREA: Record<string, Area> = {
   KANA: "KANA", READING_KANJI: "VOCAB", ORTHOGRAPHY: "VOCAB", CONTEXT: "VOCAB", PARAPHRASE: "VOCAB", USAGE: "VOCAB",
@@ -40,7 +42,7 @@ export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route:
     if (r.kind === "VOCAB" || r.kind === "KANJI") { if (!reviewed.has(r.contentId)) unseen.VOCAB++; }
     else if (r.kind === "GRAMMAR") { if (!questionsOf(r.contentId).some((q) => seen.has(q.contentId))) unseen.GRAMMAR++; }
     else if (r.kind === "PASSAGE") { if (!seen.has(r.contentId)) unseen.READING++; }
-    else if (r.kind === "LISTENING") { if (!seen.has(r.contentId)) unseen.LISTENING++; }
+    else if (r.kind === "LISTENING") { if (r.payload.dictation !== true && !seen.has(r.contentId)) unseen.LISTENING++; }
     else if (r.kind === "KANA") { if (!reviewed.has(r.contentId)) unseen.KANA++; }
   }
   if (opts.unseenVocabWords !== undefined) unseen.VOCAB = opts.unseenVocabWords;

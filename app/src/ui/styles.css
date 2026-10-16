@@ -61,3 +61,8 @@ details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .quiz.is-intro{grid-template-rows:auto minmax(0,1fr) auto}
 .quiz.has-qline{grid-template-rows:auto minmax(0,1fr) auto auto auto}
 .qline{font-weight:600;padding:2px 4px;overflow-wrap:anywhere}
+.audio-panel{display:flex;flex-direction:column;gap:6px;align-items:flex-start}.big-play{min-width:140px;min-height:56px;font-size:1.1em}
+.dictation{grid-template-rows:auto minmax(0,1fr) auto auto}
+.dict-input input{width:100%;min-height:52px;padding:0 12px;border-radius:10px;border:2px solid var(--border);background:var(--bg);font-size:1.15em}
+.diff-same{color:var(--fg)}.diff-missing{background:var(--bad-bg);color:var(--bad);border-radius:3px;padding:0 1px}.diff-extra{background:var(--warn-bg);color:var(--warn);text-decoration:line-through;border-radius:3px;padding:0 1px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}

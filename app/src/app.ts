@@ -3,6 +3,9 @@ import { FONT_PX, SettingsStore, type UserSettings } from "./domain/settings";
 import { DEFAULT_TARGET_LEVEL, type Level } from "../../shared/examSpec";
 import { DEMO_ITEMS } from "./content/demoItems";
 import { QuizShell } from "./ui/quiz";
+import { DictationShell } from "./ui/dictation";
+import type { PlayerDeps } from "./ui/audio";
+import { quizItemFor, TTS_LIMIT_NOTICE } from "./domain/listening";
 import { renderBrief, renderGrammarList, renderGrammarPoint, renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
 import { buildTabBar, tabFromHash, type TabId } from "./ui/shell";
 import { h } from "./ui/dom";
@@ -36,8 +39,8 @@ export function applySettings(doc: Document, s: UserSettings): void {
 function loadHint(): unknown { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null"); } catch { return null; } }
 function saveHint(s: UserSettings): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* storage may be unavailable */ } }
 
-type Route = TabId | "demo" | "reading" | "reading-run" | "grammar" | "gp" | "gp-run" | "kana" | "kana-run" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
-const EXTRA_ROUTES = ["reading", "reading-run", "grammar", "kana", "kana-run", "diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
+type Route = TabId | "demo" | "reading" | "reading-run" | "listening" | "listening-run" | "dictation" | "dictation-run" | "grammar" | "gp" | "gp-run" | "kana" | "kana-run" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
+const EXTRA_ROUTES = ["reading", "reading-run", "listening", "listening-run", "dictation", "dictation-run", "grammar", "kana", "kana-run", "diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
 const routeOf = (hash: string): Route => {
   const id = hash.replace(/^#/, "");
   if (id.startsWith("gp/")) return "gp";
@@ -67,7 +70,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
 
   const testNow = mode === "LOCALHOST_DEV" ? (window as unknown as { __JLPT_TEST_NOW__?: string }).__JLPT_TEST_NOW__ : undefined;
   const now = (): Date => (testNow ? new Date(testNow) : new Date());
-  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run", "kana-run", "gp-run", "reading-run"].includes(routeOf(location.hash));
+  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run", "kana-run", "gp-run", "reading-run", "listening-run", "dictation-run"].includes(routeOf(location.hash));
   const isEditing = () => { const a = document.activeElement; return !!a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName); };
   // Background updates (sync status, pulls) never tear down a running quiz or a half-typed form.
   const refresh = async (force = true) => { model = await loadModel(storage, settings.get(), now()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
@@ -79,6 +82,8 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   };
   const rec = (type: Parameters<AppStorage["record"]>[0], entity: string, payload: unknown) => storage?.record(type, entity, payload).catch(() => {});
 
+  const audioMeta = new Map<string, { source: string; plays: number }>();
+  const audioDeps = (globalThis as { __JLPT_AUDIO_DEPS__?: PlayerDeps }).__JLPT_AUDIO_DEPS__;
   const runQuiz = (host: HTMLElement, items: QuizItem[], o: { exposureType: "DIAGNOSTIC" | "PRACTICE"; activity: string; offset?: number; total?: number; onFinish: () => void; onExit: () => void }) => {
     activity = o.activity;
     clock.touch(Date.now());
@@ -106,7 +111,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
         return;
       }
       if (e.type === "QUESTION_PRESENTED") { qStart = clock.elapsed(Date.now()); rec("QUESTION_PRESENTED", e.itemId, { contentId: e.itemId, exposureType: o.exposureType, stimulusId: it?.stimulusId ?? null, order: e.order, contentVersion: 1 }); }
-      else if (e.type === "QUESTION_SUBMITTED") rec("QUESTION_SUBMITTED", e.itemId, { contentId: e.itemId, selectedChoiceId: e.selectedChoiceId, isCorrect: e.isCorrect, order: e.order, exposureType: o.exposureType, elapsedActiveMs: Math.round(clock.elapsed(Date.now()) - qStart), contentVersion: 1 });
+      else if (e.type === "QUESTION_SUBMITTED") rec("QUESTION_SUBMITTED", e.itemId, { ...(it?.audio ? { audioSource: audioMeta.get(e.itemId)?.source ?? null, plays: audioMeta.get(e.itemId)?.plays ?? 0 } : {}), contentId: e.itemId, selectedChoiceId: e.selectedChoiceId, isCorrect: e.isCorrect, order: e.order, exposureType: o.exposureType, elapsedActiveMs: Math.round(clock.elapsed(Date.now()) - qStart), contentVersion: 1 });
       else rec("ANSWER_REVEALED", e.itemId, { contentId: e.itemId });
     };
     // one same-session retry of a missed card (the retry never changes stage or due date, see srs.applyAnswer)
@@ -117,7 +122,8 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       const q = r ? cardQuestion(r, c.direction, model.pool, dayKey(), true, model.cardStates.get(`${c.contentId}#${c.direction}`)?.reviews ?? 0) : null;
       if (q) session.insertAfterCurrent(q);
     };
-    return new QuizShell(host, items, { onEvent, afterSubmit, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
+    const audioOpts = () => ({ maxPlays: o.exposureType === "DIAGNOSTIC" ? 1 : settings.get().practiceReplays === "ONCE" ? 1 : null, allowBrowserTts: settings.get().browserTtsFallback, deps: audioDeps, onPlay: (it: QuizItem, source: string, plays: number) => { audioMeta.set(it.id, { source, plays }); } });
+    return new QuizShell(host, items, { audio: audioOpts(), onEvent, afterSubmit, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
   };
 
   const download = (name: string, data: unknown): void => {
@@ -214,6 +220,35 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       renderBrief(view, ctx, { title: "독해", purpose: rd ? `${({ SHORT: "단문", MEDIUM: "중문", LONG: "장문", INFO: "정보검색" } as Record<string, string>)[type] ?? "지문"}을 읽고 문제를 풉니다. 지문은 페이지로 나뉘어 있고, 문제와 보기 4개는 화면에 고정됩니다.` : "읽을 새 지문이 없습니다.", count: rd?.questions.length ?? 0, minutes: rd?.questions.length ?? 0, startHash: "#reading-run", extra: ["해설 화면에서 [지문 보기]로 근거를 다시 확인할 수 있습니다."] });
       return;
     }
+    if (route === "listening" && model) {
+      const view = h("main", { class: "view" });
+      root.append(view, buildTabBar("learn"));
+      const ln = model.listeningNext;
+      renderBrief(view, ctx, { title: "청해", purpose: ln.length ? "소리를 듣고 문제를 풉니다. 재생 버튼을 눌러야 음원을 받습니다." : "들을 새 청해가 없습니다.", count: ln.length, minutes: ln.length * 2, startHash: "#listening-run", extra: [TTS_LIMIT_NOTICE, "해설 화면에서 [스크립트 보기]와 [다시 듣기]를 쓸 수 있습니다."] });
+      return;
+    }
+    if (route === "dictation" && model) {
+      const view = h("main", { class: "view" });
+      root.append(view, buildTabBar("learn"));
+      renderBrief(view, ctx, { title: "듣고 쓰기", purpose: "짧은 단어·문장을 듣고 가나로 씁니다. 연습용이며 평가 점수에는 들어가지 않습니다.", count: model.dictation.length, minutes: model.dictation.length, startHash: "#dictation-run", extra: [TTS_LIMIT_NOTICE] });
+      return;
+    }
+    if (route === "dictation-run" && model) {
+      const host = h("main", { class: "view-quiz" });
+      root.append(host);
+      const items = model.dictation;
+      if (!items.length) { go("#learn"); return; }
+      const dict = new DictationShell(host, items, {
+        audio: { allowBrowserTts: settings.get().browserTtsFallback, maxPlays: settings.get().practiceReplays === "ONCE" ? 1 : null, deps: audioDeps },
+        onEvent: (e) => {
+          if (e.type === "PRESENTED") rec("QUESTION_PRESENTED", e.contentId, { contentId: e.contentId, exposureType: "PRACTICE", stimulusId: null, order: 0, contentVersion: 1, dictation: true });
+          else rec("QUESTION_SUBMITTED", e.contentId, { contentId: e.contentId, isCorrect: e.correct, typed: e.typed, expected: e.expected, scriptOnly: e.scriptOnly, plays: e.plays, audioSource: e.source, order: 0, exposureType: "PRACTICE", dictation: true, contentVersion: 1 });
+        },
+        onExit: () => { void refresh().then(() => go("#learn")); },
+      });
+      quiz = { destroy: () => dict.destroy() } as unknown as QuizShell;
+      return;
+    }
     if (route === "grammar" && model) { const view = h("main", { class: "view" }); root.append(view, buildTabBar("learn")); renderGrammarList(view, ctx); return; }
     if (route === "gp" && model) { const view = h("main", { class: "view" }); root.append(view, buildTabBar("learn")); renderGrammarPoint(view, ctx, decodeURIComponent(location.hash.replace(/^#gp\//, ""))); return; }
     if ((route === "review" || route === "weak") && model) {
@@ -230,7 +265,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       });
       return;
     }
-    if ((route === "review-run" || route === "weak-run" || route === "diag-run" || route === "study" || route === "kana-run" || route === "gp-run" || route === "reading-run") && model) {
+    if ((route === "review-run" || route === "weak-run" || route === "diag-run" || route === "study" || route === "kana-run" || route === "gp-run" || route === "reading-run" || route === "listening-run") && model) {
       const host = h("main", { class: "view-quiz" });
       root.append(host);
       if (route === "diag-run") {
@@ -244,6 +279,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
         let items: QuizItem[];
         if (route === "kana-run") items = kanaSession(model.pool, model.events, day);
         else if (route === "reading-run") items = (model.readingNext?.questions ?? []).map((r) => toQuizItem(r, model!.byId));
+        else if (route === "listening-run") items = model.listeningNext.map(quizItemFor);
         else if (route === "gp-run") {
           const pid = decodeURIComponent(location.hash.replace(/^#gp-run\//, ""));
           const pt = model.grammarPoints.find((g) => g.contentId === pid);
@@ -263,14 +299,14 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
           const gCards = grammarCardsToday.slice(0, Math.max(0, nG));
           const nQ = p ? Math.max(0, Math.floor((p.allocation.GRAMMAR * 60 - gCards.length * model.secondsPerCard) / 60)) : model.studyQuestions.length;
           const reading = p ? (p.allocation.READING > 0 ? model.readingNext?.questions ?? [] : []) : model.readingNext?.questions ?? [];
-          items = [...cardItems(vocabCardsToday.slice(0, Math.max(0, nV))), ...cardItems(gCards), ...model.studyQuestions.slice(0, nQ).map((r) => toQuizItem(r, model!.byId)), ...reading.map((r) => toQuizItem(r, model!.byId))];
+          items = [...cardItems(vocabCardsToday.slice(0, Math.max(0, nV))), ...cardItems(gCards), ...model.studyQuestions.slice(0, nQ).map((r) => toQuizItem(r, model!.byId)), ...reading.map((r) => toQuizItem(r, model!.byId)), ...(!p || p.allocation.LISTENING > 0 ? model.listeningNext.map(quizItemFor) : [])];
         }
         if (!items.length) { go("#learn"); return; }
         quiz = runQuiz(host, items, { exposureType: "PRACTICE", activity: route === "weak-run" ? "WEAK_REVIEW" : "STUDY", onExit: () => { void refresh().then(() => go("#home")); }, onFinish: () => { void refresh().then(() => go("#home")); } });
       }
       return;
     }
-    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : ["study", "grammar", "gp", "kana", "reading"].includes(route) ? "learn" : route === "help" ? "settings" : (route as TabId);
+    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : ["study", "grammar", "gp", "kana", "reading", "listening", "dictation"].includes(route) ? "learn" : route === "help" ? "settings" : (route as TabId);
     const banner = mode === "LOCAL_FILE" ? h("div", { class: "banner warn", role: "status" }, "로컬 모드: Google 연결이 되지 않으며 기록이 이 기기에 보존된다는 보장이 없습니다. 백업을 자주 내보내세요.") : null;
     const view = h("main", { class: "view" });
     if (banner) root.append(banner);
@@ -294,7 +330,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
 
   settings.subscribe((s, keys) => {
     applySettings(document, s);
-    if (!restoring) storage?.record("SETTINGS_UPDATED", "settings", s).then(() => refresh()).catch(() => {});
+    if (!restoring) storage?.record("SETTINGS_UPDATED", "settings", s).then(() => refresh(!isQuizRoute())).catch(() => {});
     if (keys.includes("targetLevel")) void refresh();
   });
   addEventListener("hashchange", () => { draw(); void refresh(false); });

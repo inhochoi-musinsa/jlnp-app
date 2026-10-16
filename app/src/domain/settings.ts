@@ -14,13 +14,17 @@ export interface UserSettings {
   targetLevel: Level;
   /** Practise UNVERIFIED content too (never used for assessment). */
   includeUnverified: boolean;
+  /** how often a listening item may be played while practising */
+  practiceReplays: "UNLIMITED" | "ONCE";
+  /** play with the browser's Japanese voice when the audio file is missing (practice only) */
+  browserTtsFallback: boolean;
   defaultTimed: false; // time limit is never on by default (UX invariant 1)
   dailyBudgetMinutes: 60;
   timezone: "Asia/Seoul";
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  fontScale: "M", furiganaMode: "STUDY_ONLY", theme: "SYSTEM", targetLevel: DEFAULT_TARGET_LEVEL, includeUnverified: false,
+  fontScale: "M", furiganaMode: "STUDY_ONLY", theme: "SYSTEM", targetLevel: DEFAULT_TARGET_LEVEL, includeUnverified: false, practiceReplays: "UNLIMITED", browserTtsFallback: true,
   defaultTimed: false, dailyBudgetMinutes: 60, timezone: "Asia/Seoul",
 };
 
@@ -36,6 +40,8 @@ export function sanitizeSettings(raw: unknown): UserSettings {
     theme: pick(r.theme, THEMES, DEFAULT_SETTINGS.theme),
     targetLevel: isLevel(r.targetLevel) ? r.targetLevel : DEFAULT_SETTINGS.targetLevel,
     includeUnverified: r.includeUnverified === true,
+    practiceReplays: r.practiceReplays === "ONCE" ? "ONCE" : "UNLIMITED",
+    browserTtsFallback: r.browserTtsFallback !== false,
   };
 }
 

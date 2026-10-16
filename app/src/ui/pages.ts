@@ -9,6 +9,7 @@ import type { ConnectionManager } from "../google/connection";
 import type { ImportReport } from "../content/import";
 import { reportLines } from "../content/import";
 import { KINDS, type Kind } from "../../../shared/schema";
+import { TTS_LIMIT_NOTICE } from "../domain/listening";
 import { RUNWAY_WARN_DAYS } from "../domain/progress";
 import { DOMAIN_LABEL, DOMAINS } from "../domain/planner";
 import { ROUTE_LABEL, DIAG_GROUPS } from "../domain/diagnostic";
@@ -158,6 +159,9 @@ export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   root.append(card("약점 복습", muted(weak ? `최근 많이 틀린 항목 ${weak}개를 모아 복습합니다.` : "아직 틀린 기록이 없어 약점 항목이 없습니다."), weak ? btn("약점 복습 시작", () => ctx.go("#weak"), "primary", "start-weak") : null));
   const n = (m?.studyQuestions.length ?? 0) + (m?.review.session.length ?? 0);
   root.append(card("오늘 세션", n ? muted(`오늘 할 수 있는 항목 ${n}개`) : muted("학습할 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 여기에 표시됩니다."), n ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "learn-start") : null));
+  const ln = m?.listeningNext.length ?? 0, dn = m?.dictation.length ?? 0;
+  root.append(card("청해", muted(ln ? `오늘 들을 수 있는 항목 ${ln}개` : m && m.listeningToday ? "오늘의 새 청해는 이미 들었습니다." : "들을 청해 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 표시됩니다."), ln ? btn("청해 시작", () => ctx.go("#listening"), "primary", "start-listening") : null, h("p", { class: "muted", id: "listening-limit" }, TTS_LIMIT_NOTICE)));
+  root.append(card("듣고 쓰기", muted(dn ? `짧은 단어·문장 ${dn}개를 듣고 가나로 씁니다.` : "듣고 쓰기 콘텐츠가 아직 없습니다."), dn ? btn("듣고 쓰기 시작", () => ctx.go("#dictation"), "primary", "start-dictation") : null));
   const rd = m?.readingNext;
   root.append(card("독해", muted(rd ? `다음 지문: ${PASSAGE_LABEL[String(rd.passage.payload.type)] ?? "지문"} · 문제 ${rd.questions.length}개` : m && m.readingToday ? "오늘의 새 지문은 이미 읽었습니다." : "읽을 새 지문이 없습니다. 콘텐츠를 가져오면 표시됩니다."), rd ? btn("지문 읽기", () => ctx.go("#reading"), "primary", "start-reading") : null));
   root.append(card("문법 학습", muted(gp ? `문법 포인트 ${gp}개. 설명을 읽고 문맥 문제로 연습합니다.` : "문법 콘텐츠가 아직 없습니다."), gp ? btn("문법 포인트 보기", () => ctx.go("#grammar"), "primary", "open-grammar") : null));
@@ -276,6 +280,11 @@ export function renderSettings(root: HTMLElement, ctx: PageCtx): void {
       muted("글자는 화면에 맞춰 자동으로 줄어들지 않습니다.")),
     connectionCard(ctx),
     contentCard(ctx),
+    card("고급",
+      h("fieldset", { class: "seg" }, h("legend", {}, "청해 재생 횟수(연습)"),
+        ...(["UNLIMITED", "ONCE"] as const).map((v) => h("label", { class: "seg-opt" }, h("input", { type: "radio", name: "replays", value: v, checked: s.get().practiceReplays === v, onchange: () => s.set({ practiceReplays: v }) }), h("span", {}, v === "UNLIMITED" ? "무제한" : "1회")))),
+      h("label", { class: "seg-opt" }, h("input", { type: "checkbox", id: "tts-fallback", checked: s.get().browserTtsFallback, onchange: (e: Event) => s.set({ browserTtsFallback: (e.target as HTMLInputElement).checked }) }), h("span", {}, "음원 파일이 없으면 브라우저 음성으로 재생 (평가에는 사용되지 않음)")),
+      muted("평가용 청해의 재생 횟수 기본값은 1회입니다.")),
     backupCard(ctx),
     card("도움말", btn("도움말 열기", () => ctx.go("#help"), "ghost", "open-help")),
     card("앱 정보", h("p", {}, `버전 v${ctx.version}`), h("p", {}, `실행 환경: ${runtimeModeLabel(ctx.mode)}`)),
