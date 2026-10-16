@@ -18,7 +18,7 @@
 | T11 문법 원리 학습·혼동 글자 | DONE(PC Chrome headless) | 63d122e | 문법 포인트=복습 카드(원리 화면→문맥 문제 순환), 포인트 설명·연습 화면, 혼동 글자 퀴즈(별도 메뉴, 틀린 쌍 가중), 린트(어미만 풀리는 문항 6/6 차단·6/6 통과), KANA 생성 프롬프트·린트. 콘텐츠(혼동쌍 20)는 T12 |
 | T12 콘텐츠 런 1 → v1.0.0 | **기계장치 DONE / 분량 BLOCKED(COST)** | f96d8e1 | content:plan·fill·taxonomy 구현·테스트(가짜 LLM 8+3). 실제 생성: 혼동쌍 20/20 완료(헤드리스, 59콜), 어휘 400·문법 40·한자 문항 100은 예상 2,039콜이라 승인 대기. 신규 상한을 카드→항목(단어/포인트) 단위로 정정. docs/releases/V1.md |
 | T13 독해 UI | DONE(PC Chrome headless) | 28dc963 | 지문 원본 페이지 구분 유지·페이징, 고정 문제줄+보기 4개, 해설에서 지문/해설 전환, 하루 새 지문 1개, 런웨이·플랜·진도 반영, stimulusId 노출 기록. 3뷰포트×4글자크기×3지문 유형 한 화면 검증 |
-| T14 청해·오디오 | DONE(PC Chrome headless; TTS는 macos-say 로컬 확인) / BLOCKED(TTS: 실제 Google 합성), BLOCKED(DEVICE: Android 재생) | (커밋 후 기입) | 재생기(녹음 오버라이드>생성 파일>브라우저 음성, 재생 횟수, 소스 배지, TTS 한계 문구), 오디오 패널·스크립트/다시 듣기, 듣고 쓰기, 청해 하루 2개·런웨이, `content:audio`. 실제 headless 생성·검증 청해 1문항을 macos-say로 합성해 Chrome 재생 확인(로컬 전용, 게시 금지). 청해 수정(revise) 시 음원 키가 깨지던 버그 수정 |
+| T14 청해·오디오 | DONE(PC Chrome headless; TTS는 macos-say 로컬 확인) / BLOCKED(TTS: 실제 Google 합성), BLOCKED(DEVICE: Android 재생) | a2c581c | 재생기(녹음 오버라이드>생성 파일>브라우저 음성, 재생 횟수, 소스 배지, TTS 한계 문구), 오디오 패널·스크립트/다시 듣기, 듣고 쓰기, 청해 하루 2개·런웨이, `content:audio`. 실제 headless 생성·검증 청해 1문항을 macos-say로 합성해 Chrome 재생 확인(로컬 전용, 게시 금지). 청해 수정(revise) 시 음원 키가 깨지던 버그 수정 |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
