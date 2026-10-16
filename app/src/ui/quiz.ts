@@ -11,6 +11,8 @@ export interface QuizOptions {
   onReport?: (item: QuizItem) => void;
   /** Shown as "offset+index+1 / total" (used when resuming a longer set). */
   progress?: { offset: number; total: number };
+  /** Called right after the answer is submitted (before feedback is drawn). */
+  afterSubmit?: (item: QuizItem, isCorrect: boolean, session: QuizSession) => void;
 }
 
 const MARKS = ["①", "②", "③", "④"];
@@ -62,7 +64,7 @@ export class QuizShell {
 
     const actions = h("div", { class: "actions" });
     if (!feedback) {
-      actions.append(h("button", { class: "primary", type: "button", id: "submit", disabled: s.phase !== "ANSWER_SELECTED", onclick: () => { s.submit(); this.detailChoiceId = s.selectedId; this.render(); } }, "정답 확인"));
+      actions.append(h("button", { class: "primary", type: "button", id: "submit", disabled: s.phase !== "ANSWER_SELECTED", onclick: () => { s.submit(); const last = s.results[s.results.length - 1]; if (last) this.opts.afterSubmit?.(item, last.isCorrect, s); this.detailChoiceId = s.selectedId; this.render(); } }, "정답 확인"));
     } else {
       if (this.opts.onReport) actions.append(h("button", { class: "ghost", type: "button", onclick: () => this.opts.onReport!(item) }, "문제 신고"));
       actions.append(h("button", { class: "primary", type: "button", id: "next", onclick: () => { s.next(); this.detailChoiceId = null; this.render(); } }, "다음 계속하기"));

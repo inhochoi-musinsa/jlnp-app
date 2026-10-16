@@ -57,6 +57,13 @@ export class QuizSession {
 
   get item(): QuizItem | null { return this.items[this.index] ?? null; }
 
+  /** Adds an item after the current one (e.g. the one same-session retry of a missed card). */
+  insertAfterCurrent(item: QuizItem, gap = 3): void {
+    if (item.choices.length !== 4) throw new Error("exactly 4 choices required");
+    const at = Math.min(this.items.length, this.index + 1 + gap);
+    this.items.splice(at, 0, item);
+  }
+
   private present(): void {
     const it = this.items[this.index]!;
     this.order = shuffleIds(it.choices.map((c) => c.id), this.rng);

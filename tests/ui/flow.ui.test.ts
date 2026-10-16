@@ -18,10 +18,23 @@ for (const r of seed.items as any[]) if (r.kind === "QUESTION") {
   KEY.set(texts, r.payload.choices.find((c: any) => c.id === r.payload.correctChoiceId).text);
 }
 
+const VOCAB = (seed.items as any[]).filter((r) => r.kind === "VOCAB").map((r) => r.payload);
+/** Correct answer for a vocabulary card, read from the stem the learner sees. */
+function cardAnswer(stem: string): string | undefined {
+  const reading = /^「(.+?)」の読み方/.exec(stem);
+  if (reading) return VOCAB.find((v) => v.surface === reading[1])?.reading;
+  const meaning = /^「(.+?)」（.+?）の意味/.exec(stem);
+  if (meaning) return VOCAB.find((v) => v.surface === meaning[1])?.meaningKo;
+  const gloss = /（([^（）]+)）\s*$/.exec(stem.trim());
+  if (gloss) return VOCAB.find((v) => v.meaningKo === gloss[1])?.surface;
+  return undefined;
+}
+
 async function answerOne(page: Page, mode: "correct" | "wrong"): Promise<void> {
   await page.waitForSelector(".choice");
   const texts = await page.$$eval(".choice .ctext", (els) => els.map((e) => e.textContent ?? ""));
-  const correct = KEY.get([...texts].sort().join("|"))!;
+  const stem = ((await page.textContent("#pane-body")) ?? "").trim();
+  const correct = KEY.get([...texts].sort().join("|")) ?? cardAnswer(stem)!;
   expect(correct, "question must be found in the seed").toBeTruthy();
   const idx = mode === "correct" ? texts.indexOf(correct) : texts.findIndex((t) => t !== correct);
   await page.locator(".choice").nth(idx).click();

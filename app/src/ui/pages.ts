@@ -12,6 +12,7 @@ import { KINDS, type Kind } from "../../../shared/schema";
 import { RUNWAY_WARN_DAYS } from "../domain/progress";
 import { DOMAIN_LABEL, DOMAINS } from "../domain/planner";
 import { ROUTE_LABEL, DIAG_GROUPS } from "../domain/diagnostic";
+import { STAGE_NAME, STAGES, stageDistribution } from "../domain/srs";
 import { daysBetween, effectiveDate, eligibleDays, isPastSession, maximumRemainingMinutes } from "../domain/target";
 
 export interface PageCtx {
@@ -85,9 +86,17 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
   root.append(card("남은 학습 분량", h("p", { id: "runway-text" }, `남은 학습 분량: ${rw.days}일`),
     rw.needsContent ? h("p", { class: "banner warn", id: "need-content", role: "status" }, `콘텐츠 추가 필요 (${RUNWAY_WARN_DAYS}일 미만) — 설정 > 콘텐츠에서 진도를 내보내 PC에서 새 콘텐츠를 만드세요.`) : null));
   // 2. 복습
-  root.append(card("오늘 복습", muted("복습할 항목이 없습니다. (복습 엔진은 v1.0.0에서 제공됩니다.)")));
-  // 3. 영역
-  root.append(card("영역", h("div", { class: "areas" }, ...["어휘·한자", "문법", "독해·청해"].map((n) => h("div", { class: "area" }, h("b", {}, n), muted("자료 없음"))))));
+  const rv = m.review;
+  const dueN = rv.due.length, weakN = rv.weak.length;
+  root.append(card("오늘 복습",
+    h("p", { id: "review-counts" }, dueN || weakN ? `기한 도래 ${dueN}개 · 틀리기 쉬운 항목 ${weakN}개` : "복습할 항목이 없습니다."),
+    rv.session.length ? muted(`오늘 세션: 복습 ${rv.session.filter((c) => c.reviews > 0).length}개 + 새 항목 ${rv.session.filter((c) => c.reviews === 0).length}개`) : null,
+    rv.session.length ? btn("복습 시작", () => ctx.go("#review"), "primary", "start-review") : null));
+  // 3. 영역 (5단계 분포)
+  const dist = stageDistribution(m.vocabStages);
+  root.append(card("영역", h("div", { class: "areas" },
+    areaBlock("어휘·한자", m.vocabStages.length ? dist : null),
+    areaBlock("문법", null), areaBlock("독해·청해", null))));
   // 4. 목표
   const t = targetSummary(m);
   root.append(card("목표", h("p", { id: "target-text" }, t.text), t.detail ? muted(t.detail) : null, btn("목표 변경", () => ctx.go("#settings"), "ghost")));
@@ -103,6 +112,16 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
     ctx.storage && !ctx.storage.persistent ? warn("현재 실행에서만 유지됨 — 백업 권장") : null));
 }
 
+function areaBlock(name: string, dist: Record<0 | 1 | 2 | 3 | 4, number> | null): HTMLElement {
+  if (!dist) return h("div", { class: "area" }, h("b", {}, name), muted("자료 없음"));
+  const total = STAGES.reduce<number>((a, s) => a + dist[s], 0) || 1;
+  const label = STAGES.map((s) => `${STAGE_NAME[s]} ${dist[s]}`).join(", ");
+  return h("div", { class: "area", "data-area": name },
+    h("b", {}, name),
+    h("div", { class: "stagebar", role: "img", "aria-label": `숙련도 분포: ${label}` }, ...STAGES.filter((s) => dist[s] > 0).map((s) => h("span", { class: `st st${s}`, style: `width:${(dist[s] / total) * 100}%`, title: `${STAGE_NAME[s]} ${dist[s]}` }))),
+    h("small", { class: "muted" }, label));
+}
+
 function planCard(m: AppModel, ctx: PageCtx): HTMLElement {
   const p = m.plan!;
   const rows = DOMAINS.filter((d) => p.allocation[d] > 0 || p.excluded.includes(d)).map((d) =>
@@ -116,15 +135,28 @@ function planCard(m: AppModel, ctx: PageCtx): HTMLElement {
       h("p", { class: "muted" }, "오늘 할 일: 위 영역을 순서대로 풀어요."),
       h("p", { class: "muted" }, "진행 방식: 보기 4개 중 하나를 고르고 [정답 확인] → 해설을 읽고 [다음 계속하기]. 시간 제한은 없고 자동으로 넘어가지 않습니다."),
       h("p", { class: "muted" }, p.totalMinutes > 0 ? `예상 소요: 약 ${p.totalMinutes}분${p.underfilled ? " (오늘 가능한 학습 분량이 60분보다 적습니다)" : ""}` : "오늘 학습할 수 있는 콘텐츠가 없습니다. 콘텐츠를 추가하세요.")),
-    p.totalMinutes > 0 && m.studyQuestions.length ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "start-study") : null);
+    p.totalMinutes > 0 && (m.studyQuestions.length || m.review.session.length) ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "start-study") : null);
+}
+
+export interface Brief { title: string; purpose: string; count: number; minutes: number; startHash: string; extra?: string[] }
+
+/** One screen before any session: what, why, how many, and about how long (execution_plan §3.1). */
+export function renderBrief(root: HTMLElement, ctx: PageCtx, b: Brief): void {
+  root.append(h("h1", {}, b.title),
+    card("시작 전 안내",
+      h("ul", { id: "brief-list" }, h("li", {}, `무엇을: ${b.purpose}`), h("li", {}, `몇 개: ${b.count}개`), h("li", {}, `예상 소요: 약 ${Math.max(1, Math.round(b.minutes))}분`), h("li", {}, "진행 방식: 보기 4개 중 하나를 고르고 [정답 확인] → 해설을 읽고 [다음 계속하기]. 시간 제한은 없고 자동으로 넘어가지 않습니다."), h("li", {}, "틀리면 같은 세션에서 한 번 더 나오고, 다음 날 다시 복습합니다."), ...(b.extra ?? []).map((x) => h("li", {}, x))),
+      b.count > 0 ? btn("시작", () => ctx.go(b.startHash), "primary", "brief-go") : muted("지금 할 수 있는 항목이 없습니다."),
+      btn("돌아가기", () => ctx.go("#home"), "ghost")));
 }
 
 export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   const m = ctx.model;
   root.append(h("h1", {}, "학습"));
-  const n = m?.studyQuestions.length ?? 0;
-  root.append(card("오늘 세션", n ? muted(`풀 수 있는 문제 ${n}개`) : muted("학습할 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 여기에 표시됩니다."), n ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "learn-start") : null));
-  root.append(card("영역별 학습 · 약점 복습 · 혼동 글자", muted("v1.0.0에서 제공됩니다.")));
+  const weak = m?.review.weak.length ?? 0;
+  root.append(card("약점 복습", muted(weak ? `최근 많이 틀린 항목 ${weak}개를 모아 복습합니다.` : "아직 틀린 기록이 없어 약점 항목이 없습니다."), weak ? btn("약점 복습 시작", () => ctx.go("#weak"), "primary", "start-weak") : null));
+  const n = (m?.studyQuestions.length ?? 0) + (m?.review.session.length ?? 0);
+  root.append(card("오늘 세션", n ? muted(`오늘 할 수 있는 항목 ${n}개`) : muted("학습할 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 여기에 표시됩니다."), n ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "learn-start") : null));
+  root.append(card("영역별 학습 · 혼동 글자", muted("이후 작업(v1.0.0)에서 제공됩니다.")));
   if (ctx.startDemo) root.append(card("개발용 레이아웃 데모", btn("퀴즈 데모 시작", ctx.startDemo)));
 }
 

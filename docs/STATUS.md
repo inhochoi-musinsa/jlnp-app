@@ -14,6 +14,7 @@
 | T07 Google 연동·동기화 | **BLOCKED(GOOGLE) — 실제 E2E 미수행** / 코드·가짜 API 테스트 DONE | 18a3ad3 | GIS·URL 파서·Sheets 어댑터·비파괴 초기화·배치 동기화(readback ACK)·증분 로딩·오류 매트릭스·UI 구현. 테스트 59(가짜 Google, 실제 Google 아님). 체크리스트: docs/qa/t07-real-e2e-checklist.md |
 | T08 팩 import/export·신고·진도 | DONE(시트 쓰기는 가짜 API로만 검증) | bd48ed5 | IMP-01~11, 병합 규칙, 5,000항목 계획 0.3초·200행 배치 25회, 신고·flags.json, progress.json(개인정보 0), 런웨이. 테스트 241 PASS |
 | T09 v0.1.0 릴리스 | **DONE(후보), 태그 보류** | 9477672 | 통합 QA 기록(docs/qa/v0-qa.md), 릴리스 문서, 도움말, 가이드 대조 테스트, 화면 캡처, 배포 스크립트(스테이징만), 비밀 스캔. 262 테스트 PASS. P0 미해결(실제 Google, Android, 사람 검수, 게시 승인)로 `v0.1.0` 태그는 만들지 않음 |
+| T10 복습 엔진 | DONE(PC Chrome headless) | (T10) | 전이표 전 경우·25분 규칙·재생 복원·약점 점수 단위 테스트, 카드 문항 생성(읽기/뜻/빈칸), 시작 전 안내, 재출제, 영역 5단계 막대, 약점 복습. |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
@@ -25,7 +26,7 @@
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T10 복습 엔진 (T09 기록 완료; 게시 승인은 사용자 확인 대기)
+T11 문법 원리 학습·혼동 글자
 
 ## 해석·결정 기록
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.
@@ -38,3 +39,5 @@ T10 복습 엔진 (T09 기록 완료; 게시 승인은 사용자 확인 대기)
 - T07 클라이언트 ID: 빌드 시 `config.local.json`의 `clientId`를 번들에 넣는다(공개 값). 테스트용 런타임 주입은 localhost에서만 허용.
 - T08 해석: 같은 id+같은 버전+같은 hash가 아니라 "같은 id로 더 높은 버전이 UNVERIFIED이고 기존이 VERIFIED"이면 후보(비활성), 반대로 기존이 UNVERIFIED이고 새 버전이 VERIFIED이면 새 버전이 활성이 된다(활성 = 가장 높은 VERIFIED 버전). 명세의 "둘 다 VERIFIED일 때만 전환"에서 후자 경우만 안전 쪽으로 넓혔다.
 - T08 런웨이: 현재 버전에서 공부할 수 있는 영역(어휘, 문법)만 센다. 독해·청해는 해당 기능(v2.0.0)이 들어올 때 `ACTIVE_AREAS`에 추가한다. 따라서 v0.1.0에서는 런웨이가 항상 14일 미만이라 "콘텐츠 추가 필요"가 보인다(시드가 작기 때문이며 정상).
+- T10 결정: 하루 신규 상한(5/10/15)은 단어가 아니라 **카드 수** 기준이다(단어 하나가 읽기·뜻·빈칸 최대 3장). AUDIO 방향은 음원이 생기는 v2.0.0에서 추가. 진단을 마치기 전에는 경로를 모르므로 새 카드는 0개(복습 대상만 허용).
+- T10 재출제: 틀린 카드는 같은 세션 3문항 뒤에 1회만 다시 나오며, 재시도 결과는 단계·복습일을 바꾸지 않는다(`applyAnswer(retry)`).

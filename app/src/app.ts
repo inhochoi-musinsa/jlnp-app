@@ -3,7 +3,7 @@ import { FONT_PX, SettingsStore, type UserSettings } from "./domain/settings";
 import { DEFAULT_TARGET_LEVEL, type Level } from "../../shared/examSpec";
 import { DEMO_ITEMS } from "./content/demoItems";
 import { QuizShell } from "./ui/quiz";
-import { renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
+import { renderBrief, renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
 import { buildTabBar, tabFromHash, type TabId } from "./ui/shell";
 import { h } from "./ui/dom";
 import { AppStorage } from "./storage/session";
@@ -12,6 +12,7 @@ import { ActiveTimer } from "./domain/activity";
 import { toQuizItem } from "./domain/content";
 import type { QuizEvent, QuizItem } from "./domain/quiz";
 import { todayKey } from "./domain/target";
+import { cardItemId, cardQuestion, parseCardItemId } from "./domain/cards";
 import { ConnectionManager } from "./google/connection";
 import { requestAccessToken } from "./google/gis";
 import { SEED_PACK } from "./content/seed";
@@ -34,10 +35,11 @@ export function applySettings(doc: Document, s: UserSettings): void {
 function loadHint(): unknown { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null"); } catch { return null; } }
 function saveHint(s: UserSettings): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* storage may be unavailable */ } }
 
-type Route = TabId | "demo" | "diag" | "diag-run" | "diag-result" | "study" | "help";
+type Route = TabId | "demo" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
+const EXTRA_ROUTES = ["diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
 const routeOf = (hash: string): Route => {
   const id = hash.replace(/^#/, "");
-  if (id === "diag" || id === "diag-run" || id === "diag-result" || id === "study" || id === "help") return id;
+  if (EXTRA_ROUTES.includes(id)) return id as Route;
   const t = tabFromHash(hash);
   return t === "quiz" ? "learn" : t;
 };
@@ -60,15 +62,17 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   const clock = new ActiveTimer();
   let activity = "STUDY";
 
-  const isQuizRoute = () => ["diag-run", "study", "demo"].includes(routeOf(location.hash));
+  const testNow = mode === "LOCALHOST_DEV" ? (window as unknown as { __JLPT_TEST_NOW__?: string }).__JLPT_TEST_NOW__ : undefined;
+  const now = (): Date => (testNow ? new Date(testNow) : new Date());
+  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run"].includes(routeOf(location.hash));
   const isEditing = () => { const a = document.activeElement; return !!a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName); };
   // Background updates (sync status, pulls) never tear down a running quiz or a half-typed form.
-  const refresh = async (force = true) => { model = await loadModel(storage, settings.get()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
+  const refresh = async (force = true) => { model = await loadModel(storage, settings.get(), now()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
   const go = (hash: string) => { if (location.hash === hash) draw(); else location.hash = hash; };
 
   const flushClock = (): void => {
     const seconds = Math.round(clock.take(Date.now()) / 1000);
-    if (seconds >= 1 && storage) storage.record("STUDY_INTERVAL_COMPLETED", "study", { dayKey: todayKey(new Date(), settings.get().timezone), activity, seconds }).catch(() => {});
+    if (seconds >= 1 && storage) storage.record("STUDY_INTERVAL_COMPLETED", "study", { dayKey: todayKey(now(), settings.get().timezone), activity, seconds }).catch(() => {});
   };
   const rec = (type: Parameters<AppStorage["record"]>[0], entity: string, payload: unknown) => storage?.record(type, entity, payload).catch(() => {});
 
@@ -76,13 +80,33 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
     activity = o.activity;
     clock.touch(Date.now());
     let qStart = 0;
+    const dayKey = () => todayKey(now(), settings.get().timezone);
     const onEvent = (e: QuizEvent) => {
       const it = items.find((x) => x.id === e.itemId);
+      const card = parseCardItemId(e.itemId);
+      if (card) {
+        const base = { contentId: card.contentId, direction: card.direction, exposureType: o.exposureType, retry: card.retry };
+        if (e.type === "QUESTION_PRESENTED") { qStart = clock.elapsed(Date.now()); rec("QUESTION_PRESENTED", card.contentId, { ...base, stimulusId: null, order: e.order, contentVersion: 1 }); }
+        else if (e.type === "QUESTION_SUBMITTED") {
+          const elapsed = Math.round(clock.elapsed(Date.now()) - qStart);
+          rec("QUESTION_SUBMITTED", card.contentId, { ...base, selectedChoiceId: e.selectedChoiceId, isCorrect: e.isCorrect, order: e.order, elapsedActiveMs: elapsed, contentVersion: 1 });
+          rec("CARD_REVIEWED", card.contentId, { contentId: card.contentId, direction: card.direction, correct: e.isCorrect, retry: card.retry, dayKey: dayKey(), elapsedActiveMs: elapsed });
+        } else rec("ANSWER_REVEALED", card.contentId, { contentId: card.contentId });
+        return;
+      }
       if (e.type === "QUESTION_PRESENTED") { qStart = clock.elapsed(Date.now()); rec("QUESTION_PRESENTED", e.itemId, { contentId: e.itemId, exposureType: o.exposureType, stimulusId: it?.stimulusId ?? null, order: e.order, contentVersion: 1 }); }
       else if (e.type === "QUESTION_SUBMITTED") rec("QUESTION_SUBMITTED", e.itemId, { contentId: e.itemId, selectedChoiceId: e.selectedChoiceId, isCorrect: e.isCorrect, order: e.order, exposureType: o.exposureType, elapsedActiveMs: Math.round(clock.elapsed(Date.now()) - qStart), contentVersion: 1 });
       else rec("ANSWER_REVEALED", e.itemId, { contentId: e.itemId });
     };
-    return new QuizShell(host, items, { onEvent, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
+    // one same-session retry of a missed card (the retry never changes stage or due date, see srs.applyAnswer)
+    const afterSubmit = (item: QuizItem, ok: boolean, session: { insertAfterCurrent(i: QuizItem, gap?: number): void }) => {
+      const c = parseCardItemId(item.id);
+      if (!c || c.retry || ok || !model) return;
+      const r = model.byId.get(c.contentId);
+      const q = r ? cardQuestion(r, c.direction, model.vocab, dayKey(), true) : null;
+      if (q) session.insertAfterCurrent(q);
+    };
+    return new QuizShell(host, items, { onEvent, afterSubmit, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
   };
 
   const download = (name: string, data: unknown): void => {
@@ -94,7 +118,8 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   const stamp = () => new Date().toISOString().slice(0, 10).replace(/-/g, "");
 
   const openReport = (item: QuizItem): void => {
-    const rec = model?.byId.get(item.id);
+    const target = parseCardItemId(item.id)?.contentId ?? item.id;
+    const rec = model?.byId.get(target);
     const reasons = FLAG_REASONS.map((r, i) => h("label", { class: "seg-opt" }, h("input", { type: "radio", name: "flag-reason", value: r, checked: i === 0 }), h("span", {}, r)));
     const overlay = h("div", { class: "overlay", role: "dialog", "aria-modal": "true", "aria-label": "문제 신고" },
       h("div", { class: "sheet" }, h("h2", {}, "문제 신고"), h("p", { class: "muted" }, "신고하면 이 문제는 앞으로 나오지 않습니다."), h("div", { id: "flag-reasons" }, ...reasons),
@@ -102,7 +127,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
           h("button", { class: "ghost", type: "button", onclick: () => overlay.remove() }, "취소"),
           h("button", { class: "primary", type: "button", id: "flag-submit", onclick: async () => {
             const reason = (overlay.querySelector("input[name=flag-reason]:checked") as HTMLInputElement | null)?.value ?? "기타";
-            await storage?.record("CONTENT_FLAGGED", item.id, { contentId: item.id, reason, contentVersion: rec?.contentVersion ?? 1, contentHash: rec?.contentHash ?? "" });
+            await storage?.record("CONTENT_FLAGGED", target, { contentId: target, reason, contentVersion: rec?.contentVersion ?? 1, contentHash: rec?.contentHash ?? "" });
             overlay.replaceChildren(h("div", { class: "sheet" }, h("p", { id: "flag-done" }, "신고했습니다. 이 문제는 앞으로 나오지 않습니다."), h("button", { class: "primary", type: "button", onclick: () => overlay.remove() }, "닫기")));
             void refresh(false);
           } }, "신고"))));
@@ -163,7 +188,21 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       quiz = new QuizShell(host, DEMO_ITEMS, { onExit: () => go("#learn") });
       return;
     }
-    if ((route === "diag-run" || route === "study") && model) {
+    if ((route === "review" || route === "weak") && model) {
+      const view = h("main", { class: "view" });
+      root.append(view, buildTabBar("home"));
+      const q = model.review;
+      const list = route === "review" ? q.session : q.weak.slice(0, 10);
+      renderBrief(view, ctx, {
+        title: route === "review" ? "오늘 복습" : "약점 복습",
+        purpose: route === "review" ? q.reason : "최근 5번 중 많이 틀렸거나 복습이 밀린 항목을 먼저 다시 풉니다.",
+        count: list.length, minutes: (list.length * model.secondsPerCard) / 60,
+        startHash: route === "review" ? "#review-run" : "#weak-run",
+        extra: route === "review" ? [`기한 도래 ${q.due.length}개, 새 항목 ${list.filter((c) => c.reviews === 0).length}개 (하루 새 항목 상한 ${q.newAllowed + model.newToday}개)`] : undefined,
+      });
+      return;
+    }
+    if ((route === "review-run" || route === "weak-run" || route === "diag-run" || route === "study") && model) {
       const host = h("main", { class: "view-quiz" });
       root.append(host);
       if (route === "diag-run") {
@@ -172,13 +211,24 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
         if (model.diag.answered === 0) rec("DIAGNOSTIC_STARTED", "diagnostic", { total: model.diag.total });
         quiz = runQuiz(host, items, { exposureType: "DIAGNOSTIC", activity: "DIAGNOSTIC", offset: model.diag.answered, total: model.diag.total, onExit: () => { void refresh().then(() => go("#home")); }, onFinish: () => finishDiagnostic() });
       } else {
-        const items = model.studyQuestions.map((r) => toQuizItem(r, model!.byId));
+        const day = todayKey(now(), settings.get().timezone);
+        const cardItems = (cs: { contentId: string; direction: Parameters<typeof cardQuestion>[1] }[]) => cs.flatMap((c) => { const r = model!.byId.get(c.contentId); const q = r ? cardQuestion(r, c.direction, model!.vocab, day) : null; return q ? [q] : []; });
+        let items: QuizItem[];
+        if (route === "review-run") items = cardItems(model.review.session);
+        else if (route === "weak-run") items = cardItems(model.review.weak.slice(0, 10));
+        else {
+          // today's session: vocabulary cards for the planned minutes + grammar questions for theirs
+          const p = model.plan;
+          const nCards = p ? Math.floor((p.allocation.VOCAB * 60) / model.secondsPerCard) : model.review.session.length;
+          const nQ = p ? p.allocation.GRAMMAR : model.studyQuestions.length;
+          items = [...cardItems(model.review.session.slice(0, Math.max(0, nCards))), ...model.studyQuestions.slice(0, Math.max(0, nQ)).map((r) => toQuizItem(r, model!.byId))];
+        }
         if (!items.length) { go("#learn"); return; }
-        quiz = runQuiz(host, items, { exposureType: "PRACTICE", activity: "STUDY", onExit: () => { void refresh().then(() => go("#home")); }, onFinish: () => { void refresh().then(() => go("#home")); } });
+        quiz = runQuiz(host, items, { exposureType: "PRACTICE", activity: route === "weak-run" ? "WEAK_REVIEW" : "STUDY", onExit: () => { void refresh().then(() => go("#home")); }, onFinish: () => { void refresh().then(() => go("#home")); } });
       }
       return;
     }
-    const tab: TabId = route === "diag" || route === "diag-run" || route === "diag-result" ? "home" : route === "study" ? "learn" : route === "help" ? "settings" : (route as TabId);
+    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : route === "study" ? "learn" : route === "help" ? "settings" : (route as TabId);
     const banner = mode === "LOCAL_FILE" ? h("div", { class: "banner warn", role: "status" }, "로컬 모드: Google 연결이 되지 않으며 기록이 이 기기에 보존된다는 보장이 없습니다. 백업을 자주 내보내세요.") : null;
     const view = h("main", { class: "view" });
     if (banner) root.append(banner);
@@ -194,9 +244,10 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
     if (model?.diag.completed) {
       await storage?.record("DIAGNOSTIC_COMPLETED", "diagnostic", { scores: model.diag.scores, route: model.diag.routing.route, borderline: model.diag.routing.borderline, listening: "NOT_MEASURED" });
       await storage?.record("ROUTE_CHANGED", "route", { route: model.diag.routing.route, evidence: "PROVISIONAL" });
-      await refresh();
+      await refresh(false);
     }
-    go("#diag-result");
+    // do not pull the learner back if they already moved on while the events were being written
+    if (["diag-run", "diag-result"].includes(routeOf(location.hash))) go("#diag-result");
   }
 
   settings.subscribe((s, keys) => {

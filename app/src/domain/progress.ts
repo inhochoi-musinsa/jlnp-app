@@ -20,7 +20,7 @@ export interface Runway { perArea: Partial<Record<Area, { unseen: number; days: 
  * Runway = for every studyable area, (unseen new items / daily new cap); the smallest value is the runway.
  * `pool` must already be the study pool (active, verified, not flagged).
  */
-export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route: Route | null): Runway {
+export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route: Route | null, opts: { unseenVocabCards?: number } = {}): Runway {
   const seen = new Set<string>();
   const reviewed = new Set<string>();
   for (const e of events) {
@@ -38,6 +38,7 @@ export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route:
     else if (r.kind === "LISTENING") { if (!seen.has(r.contentId)) unseen.LISTENING++; }
     else if (r.kind === "KANA") { if (!reviewed.has(r.contentId)) unseen.KANA++; }
   }
+  if (opts.unseenVocabCards !== undefined) unseen.VOCAB = opts.unseenVocabCards;
   const dailyCap = DAILY_NEW_CAP[route ?? "FOUNDATION"];
   const perArea: Runway["perArea"] = {};
   let days = Infinity; let limiting: Area | null = null;
