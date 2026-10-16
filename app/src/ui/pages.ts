@@ -2,6 +2,8 @@ import { FONT_SCALES, FURIGANA_MODES, THEMES, type SettingsStore, type UserSetti
 import { LEVELS, type Level } from "../../../shared/examSpec";
 import { runtimeModeLabel, type RuntimeMode } from "../runtime";
 import { h } from "./dom";
+import type { AppStorage } from "../storage/session";
+import { applyImport, backupFileName, exportBackup, previewImport, type ImportPreview } from "../storage/backup";
 
 export interface PageCtx {
   mode: RuntimeMode;
@@ -9,9 +11,11 @@ export interface PageCtx {
   version: string;
   availableLevels: Level[];
   startDemo?: () => void;
+  storage?: AppStorage;
+  pendingCount?: number;
 }
 
-const card = (title: string, ...body: (Node | string)[]) => h("section", { class: "card" }, h("h2", {}, title), ...body);
+const card = (title: string, ...body: (Node | string | null)[]) => h("section", { class: "card" }, h("h2", {}, title), ...body);
 const muted = (t: string) => h("p", { class: "muted" }, t);
 
 export function renderHome(root: HTMLElement, ctx: PageCtx): void {
@@ -21,7 +25,9 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
     card("오늘 복습", muted("복습할 항목이 없습니다.")),
     card("영역", h("div", { class: "areas" }, ...["어휘·한자", "문법", "독해·청해"].map((n) => h("div", { class: "area" }, h("b", {}, n), muted("자료 없음"))))),
     card("목표", muted("목표 연도/월이 아직 설정되지 않았습니다.")),
-    card("동기화", h("span", { class: ctx.mode === "LOCAL_FILE" ? "badge warn" : "badge" }, ctx.mode === "LOCAL_FILE" ? "로컬 모드 · 시트에 저장되지 않음" : "시트 연결 전")),
+    card("동기화", h("span", { class: ctx.mode === "LOCAL_FILE" ? "badge warn" : "badge", id: "sync-badge" }, ctx.mode === "LOCAL_FILE" ? "로컬 모드 · 시트에 저장되지 않음" : "시트 연결 전"),
+      muted(ctx.pendingCount ? `동기화 전 ${ctx.pendingCount}건 (기기에만 저장됨)` : "동기화 전 기록 없음"),
+      ctx.storage && !ctx.storage.persistent ? h("p", { class: "banner warn", role: "alert" }, "현재 실행에서만 유지됨 — 백업 권장") : null),
   );
 }
 
@@ -62,6 +68,41 @@ export function renderSettings(root: HTMLElement, ctx: PageCtx): void {
       segmented("theme", "화면 색", "theme", THEMES, THEME_LABEL, s),
       muted("글자는 화면에 맞춰 자동으로 줄어들지 않습니다.")),
     card("목표 급수", h("label", { for: "level" }, "목표 급수 "), level, muted("콘텐츠가 있는 급수만 선택할 수 있습니다. 바꿔도 기존 기록은 지워지지 않습니다.")),
+    backupCard(ctx),
     card("앱 정보", h("p", {}, `버전 v${ctx.version}`), h("p", {}, `실행 환경: ${runtimeModeLabel(ctx.mode)}`)),
   );
+}
+
+function backupCard(ctx: PageCtx): HTMLElement {
+  const out = h("div", { id: "backup-result", "aria-live": "polite" });
+  const st = ctx.storage;
+  if (!st) return card("백업", muted("저장소를 열 수 없어 백업을 사용할 수 없습니다."));
+  let preview: ImportPreview | null = null;
+  const showPreview = (p: ImportPreview) => {
+    out.textContent = "";
+    if (!p.ok) { out.append(h("p", { class: "banner warn", role: "alert" }, p.fatal ?? "가져올 수 없습니다.")); return; }
+    out.append(
+      h("p", {}, `신규 ${p.newEvents}건 / 중복 ${p.duplicates}건 / 충돌 ${p.conflicts.length}건 / 거부 ${p.invalid.length}건`),
+      ...(p.profileMismatch ? [h("p", { class: "banner warn", role: "alert" }, "다른 프로필의 백업입니다. 병합하려면 확인이 필요합니다.")] : []),
+      h("button", { class: "primary", type: "button", id: "apply-import", disabled: p.newEvents === 0, onclick: async () => {
+        const r = await applyImport(st.store, p);
+        out.textContent = ""; out.append(h("p", {}, `${r.added}건을 추가했습니다. (동기화 전 상태입니다)`));
+      } }, "가져오기 승인"));
+  };
+  const file = h("input", { type: "file", id: "import-file", accept: "application/json,.json", "aria-label": "백업 파일 선택", onchange: async (e: Event) => {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (!f) return;
+    preview = await previewImport(await f.text(), st.store, st.profileId);
+    showPreview(preview);
+  } });
+  return card("백업",
+    !st.persistent ? h("p", { class: "banner warn", role: "alert" }, "현재 실행에서만 유지됨 — 백업 권장") : null,
+    h("button", { class: "primary", type: "button", id: "export-backup", onclick: async () => {
+      const b = await exportBackup(st.store, { appVersion: ctx.version, profileId: st.profileId, settings: ctx.settings.get() });
+      const url = URL.createObjectURL(new Blob([JSON.stringify(b, null, 1)], { type: "application/json" }));
+      const a = h("a", { href: url, download: backupFileName() }) as HTMLAnchorElement;
+      document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } }, "JSON 내보내기"),
+    h("label", { for: "import-file" }, "백업 가져오기 "), file, out,
+    muted("백업에는 풀이 기록과 설정만 들어 있고 토큰·비밀번호는 포함되지 않습니다."));
 }

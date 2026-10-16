@@ -6,6 +6,7 @@ import { QuizShell } from "./ui/quiz";
 import { renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
 import { buildTabBar, tabFromHash } from "./ui/shell";
 import { h } from "./ui/dom";
+import { AppStorage } from "./storage/session";
 
 declare const __APP_VERSION__: string;
 const SETTINGS_KEY = "jlpt.settings.hint";
@@ -29,9 +30,13 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
   const settings = new SettingsStore(loadHint(), saveHint);
   applySettings(document, settings.get());
   let quiz: QuizShell | null = null;
+  let storage: AppStorage | undefined;
+  let pending = 0;
+  let restoring = false;
 
   const ctx: PageCtx = {
     mode, settings, version: __APP_VERSION__, availableLevels: [DEFAULT_TARGET_LEVEL],
+    get storage() { return storage; }, get pendingCount() { return pending; },
     startDemo: mode === "LOCALHOST_DEV" ? () => { location.hash = "#demo"; } : undefined,
   };
 
@@ -53,9 +58,21 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
     ({ home: renderHome, learn: renderLearn, report: renderReport, settings: renderSettings }[tab] as (r: HTMLElement, c: PageCtx) => void)(view, ctx);
   };
 
-  settings.subscribe((s, keys) => { applySettings(document, s); if (keys.includes("targetLevel")) draw(); });
+  settings.subscribe((s, keys) => {
+    applySettings(document, s);
+    // The event is committed locally before anything claims it was saved; failures surface in the backup card.
+    if (!restoring) storage?.record("SETTINGS_UPDATED", "settings", s).then(async () => { pending = await storage!.pendingCount(); }).catch(() => {});
+    if (keys.includes("targetLevel")) draw();
+  });
   addEventListener("hashchange", draw);
   draw();
+  AppStorage.init().then(async (st) => {
+    storage = st;
+    const projected = await st.projectSettings();
+    if (projected) { restoring = true; settings.set(projected); restoring = false; }
+    pending = await st.pendingCount();
+    draw();
+  }).catch(() => { draw(); });
   return { go: (hash) => { location.hash = hash; } };
 }
 
