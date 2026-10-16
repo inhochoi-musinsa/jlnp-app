@@ -9,6 +9,8 @@ export interface QuizOptions {
   rng?: () => number;
   /** Optional "문제 신고" hook (T08). */
   onReport?: (item: QuizItem) => void;
+  /** Shown as "offset+index+1 / total" (used when resuming a longer set). */
+  progress?: { offset: number; total: number };
 }
 
 const MARKS = ["①", "②", "③", "④"];
@@ -48,7 +50,7 @@ export class QuizShell {
     this.pageIndex = 0;
 
     const header = h("header", { class: "quiz-head" },
-      h("span", { class: "quiz-progress", "aria-live": "polite" }, `${s.index + 1} / ${s.items.length}`),
+      h("span", { class: "quiz-progress", "aria-live": "polite" }, `${s.index + 1 + (this.opts.progress?.offset ?? 0)} / ${this.opts.progress?.total ?? s.items.length}`),
       h("button", { class: "ghost", type: "button", onclick: () => this.opts.onExit?.() }, "나가기"));
 
     const pane = h("div", { class: "pane", id: "pane" },

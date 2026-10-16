@@ -46,3 +46,10 @@ ruby rt{font-size:.55em}
 :root[data-furigana=HIDDEN] rt{display:none}
 :root[data-furigana=STUDY_ONLY] [data-context=assess] rt{display:none}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+.row input,.row select{min-height:44px;padding:0 8px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+#target-year{width:6.5em}
+.plan-list{margin:6px 0;padding-left:1.2em}
+.brief{border-top:1px solid var(--border);margin-top:8px;padding-top:6px}
+.big{font-size:1.2em;font-weight:700;margin:4px 0}
+details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}

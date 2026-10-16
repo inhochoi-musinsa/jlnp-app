@@ -10,6 +10,7 @@
 | T03 퀴즈 쉘·설정·홈 쉘 | DONE(PC Chrome headless 기준) | dc0fe78 | UI 20 PASS(3 뷰포트×4 글자크기). Android 실기기 미확인 |
 | T04 로컬 저장·outbox·백업 | DONE(Mock 포함, 실제 Sheets 아님) | 2e9b61b | 단위 19 + 브라우저 4 PASS. 백업→복원 중복 0 |
 | T05 콘텐츠 CLI 최소판 | DONE | 16700f3 | 시드 팩 45항목 전부 VERIFIED(생성 claude-sonnet-5-5 ≠ 검증 claude-opus-5-5, headless, 모델명 resolved). 테스트 125 PASS |
+| T06 진단·목표·플랜 | DONE(PC Chrome headless) | (T06) | 28문항 진단·라우팅·재개, 목표 연도/월, 60분 플랜(청해 제외·재배분·분량 부족 표기). 단위 18+UI 6 PASS |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
@@ -19,10 +20,12 @@
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T06 진단·목표·플랜
+T07 Google 연동·동기화 (사용자 준비물 없음 → BLOCKED(GOOGLE) 예상, Mock 코드만 별도)
 
 ## 해석·결정 기록
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.
 - 생성 단계 자기 수리(`repairDraft`): V1 위반 초안을 검증 호출 전에 생성 모델에게 최대 2회 되돌려 보낸다. V1 자체의 "즉시 REJECT"는 그대로.
 - 시드 생성은 headless(구독) 방식으로 수행. `maxCallsPerRun`은 로컬 `config.local.json`(gitignore)에서 300으로 올림(템플릿 기본 100). USD 과금 아님.
 - 시드 품질은 자동 검증만 거쳤다. 사람 표본 점검은 하지 않았다(`npm run content:sample`로 가능).
+- T06 오늘 세션: v0.1.0에서는 문법 문제(LEARN 풀 QUESTION)만 풀 수 있다. 어휘 카드 학습은 T10(복습 엔진)에서 제공되므로 플랜에서 "카드 복습은 v1.0.0에서 제공"으로 제외 표기한다.
+- T06 시드 분량: 진단 28 + 어휘 8 + 문법 포인트 4(+문제 3). 문법 문제가 4개가 아닌 3개인 것은 검증을 통과한 항목만 담았기 때문이다.

@@ -83,3 +83,19 @@ export function eligibleDays(todayDay: string, examDay: string | null, restIsoWe
 
 /** Arithmetic ceiling at 60 min/day; not a pass-time estimate. */
 export const maximumRemainingMinutes = (days: number, dailyBudgetMinutes = 60): number => days * dailyBudgetMinutes;
+
+import { replayOrder, type SyncEvent } from "../storage/events";
+
+/** ExamTarget as of the event log: the latest EXAM_TARGET_SELECTED wins, then EXAM_NOTICE_VERIFIED fills the official date. */
+export function projectExamTarget(events: SyncEvent[], level: Level): ExamTarget {
+  let t = makeExamTarget(level, null, null);
+  for (const e of [...events].sort(replayOrder)) {
+    const p = JSON.parse(e.payloadJson);
+    if (e.type === "EXAM_TARGET_SELECTED") {
+      t = { ...makeExamTarget(p.level ?? level, p.year ?? null, p.month ?? null, null, e.eventId) };
+    } else if (e.type === "EXAM_NOTICE_VERIFIED" && t.targetYear === p.year && t.targetMonth === p.month && typeof p.confirmedExamDate === "string") {
+      t = { ...t, confirmedExamDate: p.confirmedExamDate, dateStatus: "CONFIRMED", sourceUrl: p.sourceUrl ?? null, sourceVerifiedAt: e.occurredAt };
+    }
+  }
+  return t;
+}
