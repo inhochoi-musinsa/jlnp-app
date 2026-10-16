@@ -47,7 +47,8 @@ describe("seed diagnostic", () => {
     const stim = new Set(reading.map((r) => r.record.payload.stimulusId));
     expect(stim.size).toBe(2);
     const qi = toQuizItem(reading[0]!.record, byId);
-    expect(qi.stem.length).toBeGreaterThan(String(reading[0]!.record.payload.stem).length);
+    expect(qi.stem).toBe(String(reading[0]!.record.payload.stem)); // the question line is separate from the passage
+    expect(qi.passage!.pages.length).toBeGreaterThanOrEqual(1);
     expect(qi.stimulusId).toBeTruthy();
   });
 });

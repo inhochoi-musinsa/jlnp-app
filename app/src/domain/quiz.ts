@@ -8,6 +8,8 @@ export interface QuizItem {
   stimulusId?: string;
   /** record to report/mark as seen when the item is a card made from another record (e.g. the linked grammar question) */
   refId?: string;
+  /** Reading passage: shown paged above the fixed question line; its page breaks are kept. */
+  passage?: { pages: string[]; kind?: string };
   /** lines shown once before the question (new grammar point principle) */
   intro?: { title: string; lines: string[] };
 }

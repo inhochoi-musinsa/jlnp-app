@@ -8,7 +8,7 @@ import type { SyncEvent } from "./storage/events";
 import type { AppStorage } from "./storage/session";
 import { DOMAINS, makePlan, type Plan, type PlanDomain } from "./domain/planner";
 import { activeVersions, effectiveStatus, flagProjection, studyPool, type FlagInfo } from "./content/status";
-import { computeRunway, dailyIntake, type Runway } from "./domain/progress";
+import { computeRunway, dailyIntake, READING_NEW_PER_DAY, type Runway } from "./domain/progress";
 import { buildQueue, observedSecondsPerCard, replayCards, wordStage, type CardState, type ReviewQueue, type Stage } from "./domain/srs";
 import { allCards, directionsFor } from "./domain/cards";
 import { kanaPairs } from "./domain/kana";
@@ -40,6 +40,9 @@ export interface AppModel {
   grammarStages: Stage[];
   grammarPoints: ContentRecord[];
   kanaPairs: number;
+  /** next unseen reading passage (with its questions) and whether today's intake allows it */
+  readingNext: { passage: ContentRecord; questions: ContentRecord[] } | null;
+  readingToday: number;
   review: ReviewQueue;
   secondsPerCard: number;
   newToday: number;
@@ -93,18 +96,30 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const review = buildQueue({ cards, today, newCaps: route ? { VOCAB: intake.VOCAB, GRAMMAR: intake.GRAMMAR } : { VOCAB: 0, GRAMMAR: 0 }, groupOf, secondsPerCard, availableMinutes: remainingMinutes, newToday: newTodayBy });
   const vocabStages = vocab.map((r) => wordStage(states, r.contentId, directionsFor(r, pool)));
   const grammarStages = grammarPoints.filter((g) => directionsFor(g, pool).length).map((g) => wordStage(states, g.contentId, directionsFor(g, pool)));
+  // reading: one new passage per day, each with all of its verified questions
+  const firstSeenDay = new Map<string, string>();
+  for (const e of events) {
+    if (e.type !== "QUESTION_PRESENTED") continue;
+    const sid = JSON.parse(e.payloadJson).stimulusId as string | null | undefined;
+    if (sid && !firstSeenDay.has(sid)) firstSeenDay.set(sid, todayKey(new Date(e.occurredAt), settings.timezone));
+  }
+  const readingToday = [...firstSeenDay.values()].filter((d) => d === today).length;
+  const questionsOf = (p: ContentRecord) => pool.filter((q) => q.kind === "QUESTION" && q.payload.stimulusId === p.contentId).sort((a, b) => a.contentId.localeCompare(b.contentId));
+  const unseenPassages = pool.filter((r) => r.kind === "PASSAGE" && r.pool === "LEARN" && !exposed.has(r.contentId) && questionsOf(r).length > 0).sort((a, b) => a.contentId.localeCompare(b.contentId));
+  const readingNext = unseenPassages[0] && readingToday < READING_NEW_PER_DAY ? { passage: unseenPassages[0], questions: questionsOf(unseenPassages[0]) } : null;
   const sessionVocab = review.session.filter((c) => !isGrammarCard(c));
   const sessionGrammar = review.session.filter(isGrammarCard);
-  const available = Object.fromEntries(DOMAINS.map((d) => [d, (d === "GRAMMAR" && (studyQuestions.length > 0 || sessionGrammar.length > 0)) || (d === "VOCAB" && sessionVocab.length > 0)])) as Record<PlanDomain, boolean>;
+  const available = Object.fromEntries(DOMAINS.map((d) => [d, (d === "GRAMMAR" && (studyQuestions.length > 0 || sessionGrammar.length > 0)) || (d === "VOCAB" && sessionVocab.length > 0) || (d === "READING" && !!readingNext)])) as Record<PlanDomain, boolean>;
   if (!available.GRAMMAR) notes.GRAMMAR = grammarPoints.length ? "오늘 복습·새 문법이 없음" : "콘텐츠 준비 중";
   if (!available.VOCAB && vocab.length >= 4) notes.VOCAB = "오늘 복습·새 카드가 없음";
+  if (!available.READING && unseenPassages.length) notes.READING = "오늘의 새 지문은 이미 읽음";
   const plan = route
-    ? makePlan({ route, activeSecondsToday, dailyBudgetMinutes: settings.dailyBudgetMinutes, available, capacityMinutes: { GRAMMAR: Math.ceil((studyQuestions.length * SECONDS_PER_QUESTION + sessionGrammar.length * secondsPerCard) / 60), VOCAB: Math.ceil((sessionVocab.length * secondsPerCard) / 60) } })
+    ? makePlan({ route, activeSecondsToday, dailyBudgetMinutes: settings.dailyBudgetMinutes, available, capacityMinutes: { GRAMMAR: Math.ceil((studyQuestions.length * SECONDS_PER_QUESTION + sessionGrammar.length * secondsPerCard) / 60), VOCAB: Math.ceil((sessionVocab.length * secondsPerCard) / 60), READING: readingNext ? Math.ceil((readingNext.questions.length * SECONDS_PER_QUESTION) / 60) : 0 } })
     : null;
   const unseenItems = (grammar: boolean) => new Set(cards.filter((c) => isGrammarCard(c) === grammar && cards.filter((x) => x.contentId === c.contentId).every((x) => x.reviews === 0 && x.dueAt === null)).map((c) => c.contentId)).size;
   const runway = computeRunway(pool, events, route, { unseenVocabWords: unseenItems(false), unseenGrammarPoints: unseenItems(true) });
   return {
-    cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, review, secondsPerCard, newToday, vocabStages, vocab,
+    cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, readingNext, readingToday, review, secondsPerCard, newToday, vocabStages, vocab,
     rows, records, pool, flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), diag, today, activeSecondsToday,
     pending: storage ? (await storage.pendingCount()) : 0, plan, exposed, studyQuestions, notes,
   };

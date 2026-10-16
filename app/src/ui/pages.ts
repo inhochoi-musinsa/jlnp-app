@@ -149,6 +149,7 @@ export function renderBrief(root: HTMLElement, ctx: PageCtx, b: Brief): void {
       btn("돌아가기", () => ctx.go("#home"), "ghost")));
 }
 
+const PASSAGE_LABEL: Record<string, string> = { SHORT: "단문", MEDIUM: "중문", LONG: "장문", INFO: "정보검색" };
 export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   const m = ctx.model;
   root.append(h("h1", {}, "학습"));
@@ -157,6 +158,8 @@ export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   root.append(card("약점 복습", muted(weak ? `최근 많이 틀린 항목 ${weak}개를 모아 복습합니다.` : "아직 틀린 기록이 없어 약점 항목이 없습니다."), weak ? btn("약점 복습 시작", () => ctx.go("#weak"), "primary", "start-weak") : null));
   const n = (m?.studyQuestions.length ?? 0) + (m?.review.session.length ?? 0);
   root.append(card("오늘 세션", n ? muted(`오늘 할 수 있는 항목 ${n}개`) : muted("학습할 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 여기에 표시됩니다."), n ? btn("오늘 세션 시작", () => ctx.go("#study"), "primary", "learn-start") : null));
+  const rd = m?.readingNext;
+  root.append(card("독해", muted(rd ? `다음 지문: ${PASSAGE_LABEL[String(rd.passage.payload.type)] ?? "지문"} · 문제 ${rd.questions.length}개` : m && m.readingToday ? "오늘의 새 지문은 이미 읽었습니다." : "읽을 새 지문이 없습니다. 콘텐츠를 가져오면 표시됩니다."), rd ? btn("지문 읽기", () => ctx.go("#reading"), "primary", "start-reading") : null));
   root.append(card("문법 학습", muted(gp ? `문법 포인트 ${gp}개. 설명을 읽고 문맥 문제로 연습합니다.` : "문법 콘텐츠가 아직 없습니다."), gp ? btn("문법 포인트 보기", () => ctx.go("#grammar"), "primary", "open-grammar") : null));
   root.append(card("혼동 글자", muted(kn >= 2 ? `헷갈리는 글자 쌍 ${kn}개로 퀴즈를 풉니다.` : "혼동 글자 콘텐츠가 아직 없습니다. 팩을 가져오면 사용할 수 있습니다."), kn >= 2 ? btn("혼동 글자 퀴즈 시작", () => ctx.go("#kana"), "primary", "start-kana") : null));
   root.append(card("영역별 학습", muted("이후 작업에서 제공됩니다.")));

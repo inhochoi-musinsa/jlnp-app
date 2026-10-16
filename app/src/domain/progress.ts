@@ -4,12 +4,14 @@ import type { Route } from "./diagnostic";
 
 export type Area = "KANA" | "VOCAB" | "GRAMMAR" | "READING" | "LISTENING";
 /** Areas that can actually be studied in this app version; extended as features ship (reading v2, listening v2). */
-export const ACTIVE_AREAS: Area[] = ["VOCAB", "GRAMMAR"];
+export const ACTIVE_AREAS: Area[] = ["VOCAB", "GRAMMAR", "READING"];
 export const DAILY_NEW_CAP: Record<Route, number> = { KANA_FOUNDATION: 5, FOUNDATION: 10, TARGET_FOCUS: 15 };
 export const RUNWAY_WARN_DAYS = 14;
 /** New grammar points per day (principles take time). `[실무 제안]` */
 export const GRAMMAR_NEW_PER_DAY = 1;
-export const dailyIntake = (route: Route | null): Record<Area, number> => ({ KANA: 0, VOCAB: DAILY_NEW_CAP[route ?? "FOUNDATION"], GRAMMAR: GRAMMAR_NEW_PER_DAY, READING: 0, LISTENING: 0 });
+/** New reading passages per day (each comes with its questions). `[실무 제안]` */
+export const READING_NEW_PER_DAY = 1;
+export const dailyIntake = (route: Route | null): Record<Area, number> => ({ KANA: 0, VOCAB: DAILY_NEW_CAP[route ?? "FOUNDATION"], GRAMMAR: GRAMMAR_NEW_PER_DAY, READING: READING_NEW_PER_DAY, LISTENING: 0 });
 
 const DOMAIN_AREA: Record<string, Area> = {
   KANA: "KANA", READING_KANJI: "VOCAB", ORTHOGRAPHY: "VOCAB", CONTEXT: "VOCAB", PARAPHRASE: "VOCAB", USAGE: "VOCAB",
@@ -23,7 +25,7 @@ export interface Runway { perArea: Partial<Record<Area, { unseen: number; days: 
  * Runway = for every studyable area, (unseen new items / daily new cap); the smallest value is the runway.
  * `pool` must already be the study pool (active, verified, not flagged).
  */
-export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route: Route | null, opts: { unseenVocabWords?: number; unseenGrammarPoints?: number } = {}): Runway {
+export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route: Route | null, opts: { unseenVocabWords?: number; unseenGrammarPoints?: number; areas?: Area[] } = {}): Runway {
   const seen = new Set<string>();
   const reviewed = new Set<string>();
   for (const e of events) {
@@ -47,7 +49,7 @@ export function computeRunway(pool: ContentRecord[], events: SyncEvent[], route:
   const dailyCap = intake.VOCAB;
   const perArea: Runway["perArea"] = {};
   let days = Infinity; let limiting: Area | null = null;
-  for (const a of ACTIVE_AREAS) {
+  for (const a of opts.areas ?? ACTIVE_AREAS) {
     const d = Math.floor(unseen[a] / Math.max(1, intake[a]));
     perArea[a] = { unseen: unseen[a], days: d };
     if (d < days) { days = d; limiting = a; }

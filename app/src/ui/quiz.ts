@@ -28,6 +28,7 @@ export class QuizShell {
   private pageIndex = 0;
   private detailChoiceId: string | null = null;
   private introSeen = new Set<string>();
+  private paneMode: "passage" | "explain" = "passage";
   private resizeObs?: ResizeObserver;
 
   constructor(private host: HTMLElement, items: QuizItem[], private opts: QuizOptions = {}) {
@@ -51,6 +52,8 @@ export class QuizShell {
     const item = s.item!;
     const feedback = s.phase === "FEEDBACK";
     this.pageIndex = 0;
+    this.paneMode = feedback ? "explain" : "passage";
+    this.root.classList.toggle("has-qline", !!item.passage);
     if (s.phase === "QUESTION" && item.intro && !this.introSeen.has(item.id)) { this.renderIntro(item); return; }
 
     const header = h("header", { class: "quiz-head" },
@@ -71,7 +74,9 @@ export class QuizShell {
       if (this.opts.onReport) actions.append(h("button", { class: "ghost", type: "button", onclick: () => this.opts.onReport!(item) }, "문제 신고"));
       actions.append(h("button", { class: "primary", type: "button", id: "next", onclick: () => { s.next(); this.detailChoiceId = null; this.render(); } }, "다음 계속하기"));
     }
-    this.root.append(header, pane, choices, actions);
+    // A passage item keeps its (short) question line pinned above the four choices, in question and feedback alike.
+    const qline = item.passage ? h("div", { class: "qline", id: "qline" }, richText(item.stem)) : null;
+    this.root.append(header, pane, ...(qline ? [qline] : []), choices, actions);
     this.fillPane(feedback);
   }
 
@@ -123,6 +128,11 @@ export class QuizShell {
       return out;
     }
     const sentences = (t: string) => t.split(/(?<=[。！？\n])/u).map((x) => x.trim()).filter(Boolean);
+    if (item.passage && (!feedback || this.paneMode === "passage")) {
+      // the passage's own pages are kept: every content page starts a new pane page (long pages are split further)
+      item.passage.pages.forEach((page, pi) => sentences(page).forEach((sent, si) => out.push(h("p", { class: "chunk", "data-brk": si === 0 && pi > 0 ? "1" : null }, richText(sent)))));
+      return out;
+    }
     if (!feedback) {
       for (const sent of sentences(item.stem)) out.push(h("p", { class: "chunk" }, richText(sent)));
       return out;
@@ -150,6 +160,7 @@ export class QuizShell {
       let cur: HTMLElement[] = [];
       body.textContent = "";
       for (const c of chunks) {
+        if (c.dataset.brk && cur.length) { pages.push(cur); cur = []; body.textContent = ""; }
         body.append(c);
         if (!fits() && cur.length) {
           body.removeChild(c);
@@ -160,8 +171,9 @@ export class QuizShell {
       if (cur.length) pages.push(cur);
       return pages;
     };
-    let pages = paginate(false);
-    if (pages.length > 1) pages = paginate(true);
+    const toggle = feedback && !!this.session.item?.passage;
+    let pages = paginate(toggle);
+    if (!toggle && pages.length > 1) pages = paginate(true);
     this.pages = pages;
     this.pageIndex = Math.min(this.pageIndex, Math.max(0, pages.length - 1));
     this.showPage(pager, body);
@@ -171,6 +183,12 @@ export class QuizShell {
     body.textContent = "";
     for (const c of this.pages[this.pageIndex] ?? []) body.append(c);
     pager.textContent = "";
+    const item = this.session.item;
+    const toggle = this.session.phase === "FEEDBACK" && !!item?.passage;
+    if (toggle) {
+      pager.hidden = false;
+      pager.append(h("button", { class: "ghost", type: "button", id: "toggle-passage", onclick: () => { this.paneMode = this.paneMode === "passage" ? "explain" : "passage"; this.pageIndex = 0; this.fillPane(true); } }, this.paneMode === "passage" ? "해설 보기" : "지문 보기"));
+    }
     if (this.pages.length > 1) {
       pager.hidden = false;
       pager.append(

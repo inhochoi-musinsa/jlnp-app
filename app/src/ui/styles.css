@@ -59,3 +59,5 @@ details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .stagebar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:var(--border);margin:6px 0}
 .st{display:block;height:100%}.st0{background:#9aa5b0}.st1{background:#e0a63a}.st2{background:#5aa0d6}.st3{background:#3a7ec0}.st4{background:#2e8b57}
 .quiz.is-intro{grid-template-rows:auto minmax(0,1fr) auto}
+.quiz.has-qline{grid-template-rows:auto minmax(0,1fr) auto auto auto}
+.qline{font-weight:600;padding:2px 4px;overflow-wrap:anywhere}

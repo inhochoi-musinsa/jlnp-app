@@ -7,10 +7,10 @@ export const tagValue = (r: ContentRecord, prefix: string): string | undefined =
 export function toQuizItem(q: ContentRecord, byId: Map<string, ContentRecord>): QuizItem {
   const p = q.payload;
   const passage = p.stimulusId ? byId.get(p.stimulusId as string) : undefined;
-  const lead = passage ? (passage.payload.pages as string[]).join("\n") + "\n" : "";
   return {
     id: q.contentId,
-    stem: lead + (p.stem as string),
+    stem: p.stem as string,
+    passage: passage ? { pages: passage.payload.pages as string[], kind: passage.payload.type as string } : undefined,
     choices: (p.choices as QuizItem["choices"]).map((c) => ({ ...c })),
     correctChoiceId: p.correctChoiceId as string,
     explanationKo: p.explanationKo as string,
