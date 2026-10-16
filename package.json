@@ -1,6 +1,6 @@
 {
   "name": "jlpt-app",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "JLPT study app: single-file dist/index.html + external content CLI",
@@ -10,7 +10,7 @@
     "size": "node scripts/measure-size.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run typecheck && npm run lint:level-neutral && npm run test && npm run build",
+    "check": "npm run typecheck && npm run lint:level-neutral && npm run scan:secrets && npm run test && npm run build",
     "lint:level-neutral": "node scripts/level-neutral.mjs",
     "content:doctor": "tsx tools/content/src/cli.ts doctor",
     "content:catalog": "tsx tools/content/src/cli.ts catalog",
@@ -19,7 +19,9 @@
     "content:pack": "tsx tools/content/src/cli.ts pack",
     "content:ledger": "tsx tools/content/src/cli.ts ledger",
     "content:sample": "tsx tools/content/src/cli.ts sample",
-    "content:seed": "tsx tools/content/src/cli.ts seed"
+    "content:seed": "tsx tools/content/src/cli.ts seed",
+    "deploy": "node scripts/deploy-pages.mjs",
+    "scan:secrets": "node scripts/scan-secrets.mjs"
   },
   "devDependencies": {
     "@types/kuromoji": "^0.1.3",

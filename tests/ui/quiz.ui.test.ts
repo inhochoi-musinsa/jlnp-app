@@ -79,6 +79,16 @@ describe("TST-QUIZ behaviour", () => {
     await page.context().close();
   }, 30000);
 
+  it("10 rapid taps on feedback choices never advance the quiz (plan.md §11.2 manual-advance check)", async () => {
+    const page = await open({ width: 390, height: 844 }, "M");
+    await page.click(".choice >> nth=0"); await page.click("#submit"); await page.waitForSelector("#next");
+    const progress = await page.textContent(".quiz-progress");
+    for (let i = 0; i < 10; i++) await page.locator(".choice").nth(i % 4).click({ delay: 5 });
+    expect(await page.textContent(".quiz-progress")).toBe(progress);
+    expect(await page.locator("#next").count()).toBe(1);
+    await page.context().close();
+  });
+
   it("submit is impossible before a choice is selected; DOM leaks no correct-answer marker before submit", async () => {
     const page = await open({ width: 390, height: 844 }, "M");
     expect(await page.locator("#submit").isDisabled()).toBe(true);

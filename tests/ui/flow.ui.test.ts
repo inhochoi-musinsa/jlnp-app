@@ -107,7 +107,7 @@ describe("T06 diagnostic, target and plan in a real browser", () => {
     const { page, ctx } = await newPage();
     await page.goto(URL + "#settings");
     await page.waitForSelector("#save-target");
-    expect(await page.textContent("#target-current")).toContain("아직 설정되지 않았");
+    await page.waitForFunction(() => document.querySelector("#target-current")?.textContent?.includes("아직 설정되지 않았"));
     await page.fill("#target-year", "2099"); await page.selectOption("#target-month", "7"); await page.click("#save-target");
     await page.waitForFunction(() => document.querySelector("#target-current")?.textContent?.includes("2099년 7월"));
     expect(await page.textContent("#target-current")).toMatch(/2099년 7월 \(예상 7월 5일 \/ 공식 미확정\)/);

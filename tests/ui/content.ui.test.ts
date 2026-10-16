@@ -155,6 +155,11 @@ describe("T08 runway, import, export, flags, progress (PC Chrome headless)", () 
     const { page, close } = await open("#study");
     await page.waitForSelector(".choice");
     await page.locator(".choice").first().click(); await page.click("#submit"); await page.waitForSelector("#next");
+    await page.waitForFunction(async () => { // wait until the submit event is committed locally
+      const db: IDBDatabase = await new Promise((r, j) => { const q = indexedDB.open("jlpt-app"); q.onsuccess = () => r(q.result); q.onerror = () => j(q.error); });
+      const all: any[] = await new Promise((r) => { const q = db.transaction("events").objectStore("events").getAll(); q.onsuccess = () => r(q.result); });
+      return all.some((x) => x.event.type === "QUESTION_SUBMITTED");
+    });
     await page.goto(URL + "#settings");
     await page.waitForSelector("#export-progress");
     const pr = await downloadText(page, "#export-progress");

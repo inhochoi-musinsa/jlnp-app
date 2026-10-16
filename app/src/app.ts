@@ -3,7 +3,7 @@ import { FONT_PX, SettingsStore, type UserSettings } from "./domain/settings";
 import { DEFAULT_TARGET_LEVEL, type Level } from "../../shared/examSpec";
 import { DEMO_ITEMS } from "./content/demoItems";
 import { QuizShell } from "./ui/quiz";
-import { renderDiagIntro, renderDiagResult, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
+import { renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
 import { buildTabBar, tabFromHash, type TabId } from "./ui/shell";
 import { h } from "./ui/dom";
 import { AppStorage } from "./storage/session";
@@ -34,10 +34,10 @@ export function applySettings(doc: Document, s: UserSettings): void {
 function loadHint(): unknown { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null"); } catch { return null; } }
 function saveHint(s: UserSettings): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* storage may be unavailable */ } }
 
-type Route = TabId | "demo" | "diag" | "diag-run" | "diag-result" | "study";
+type Route = TabId | "demo" | "diag" | "diag-run" | "diag-result" | "study" | "help";
 const routeOf = (hash: string): Route => {
   const id = hash.replace(/^#/, "");
-  if (id === "diag" || id === "diag-run" || id === "diag-result" || id === "study") return id;
+  if (id === "diag" || id === "diag-run" || id === "diag-result" || id === "study" || id === "help") return id;
   const t = tabFromHash(hash);
   return t === "quiz" ? "learn" : t;
 };
@@ -178,13 +178,14 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       }
       return;
     }
-    const tab: TabId = route === "diag" || route === "diag-run" || route === "diag-result" ? "home" : route === "study" ? "learn" : (route as TabId);
+    const tab: TabId = route === "diag" || route === "diag-run" || route === "diag-result" ? "home" : route === "study" ? "learn" : route === "help" ? "settings" : (route as TabId);
     const banner = mode === "LOCAL_FILE" ? h("div", { class: "banner warn", role: "status" }, "로컬 모드: Google 연결이 되지 않으며 기록이 이 기기에 보존된다는 보장이 없습니다. 백업을 자주 내보내세요.") : null;
     const view = h("main", { class: "view" });
     if (banner) root.append(banner);
     root.append(view, buildTabBar(tab));
     if (route === "diag" && model) renderDiagIntro(view, ctx);
     else if (route === "diag-result" && model) renderDiagResult(view, ctx);
+    else if (route === "help") renderHelp(view, ctx);
     else ({ home: renderHome, learn: renderLearn, report: renderReport, settings: renderSettings } as Record<string, (r: HTMLElement, c: PageCtx) => void>)[tab]!(view, ctx);
   }
 

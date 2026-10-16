@@ -180,7 +180,7 @@ function targetCard(ctx: PageCtx): HTMLElement {
     if (m && isPastSession(m.today, y, mo)) { err.append(warn("선택 회차가 이미 지났습니다. 다른 회차를 선택해 주세요.")); return; }
     await ctx.setTarget(level.value as Level, y, mo);
   }, "primary", "save-target");
-  const sum = m ? targetSummary(m) : { text: "", detail: null };
+  const sum = m ? targetSummary(m) : { text: "불러오는 중입니다.", detail: null };
   const t = m?.examTarget;
   const confirmDate = h("input", { id: "confirm-date", type: "date", "aria-label": "공식 시험일" }) as HTMLInputElement;
   const confirmUrl = h("input", { id: "confirm-url", type: "url", placeholder: "https://", "aria-label": "공식 공고 주소" }) as HTMLInputElement;
@@ -216,6 +216,7 @@ export function renderSettings(root: HTMLElement, ctx: PageCtx): void {
     connectionCard(ctx),
     contentCard(ctx),
     backupCard(ctx),
+    card("도움말", btn("도움말 열기", () => ctx.go("#help"), "ghost", "open-help")),
     card("앱 정보", h("p", {}, `버전 v${ctx.version}`), h("p", {}, `실행 환경: ${runtimeModeLabel(ctx.mode)}`)),
   );
 }
@@ -321,4 +322,18 @@ function contentCard(ctx: PageCtx): HTMLElement {
     btn("진도 내보내기", () => ctx.exportProgress(), "ghost", "export-progress"),
     h("p", { id: "flag-count" }, `신고한 문제: ${flagCount}개`),
     btn("신고 목록 내보내기", () => { ctx.exportFlags(); }, "ghost", "export-flags"));
+}
+
+const HELP: { title: string; lines: string[] }[] = [
+  { title: "시트 연결", lines: ["설정 > 시트 연결 > Google 계정으로 연결 → 시트 주소 붙여넣기 → 연결 확인 → 초기화 승인.", "처음에는 테스트용 빈 시트로 시작하세요. 앱은 _JLPT_ 로 시작하는 전용 탭만 만들고 기존 탭은 건드리지 않습니다.", "파일을 직접 연(file://) 로컬 모드에서는 연결할 수 없습니다. 배포된 https 주소로 여세요."] },
+  { title: "동기화 배지", lines: ["동기화 완료: 시트에 저장하고 다시 읽어 확인했습니다.", "동기화 전 N건: 아직 이 기기에만 있습니다. 지금 동기화를 누르거나 잠시 기다리세요.", "다시 연결 필요: 연결이 만료되었습니다(약 1시간). 다시 연결을 누르세요. 기록은 그대로입니다.", "오프라인 / 동기화 지연: 연결이 돌아오거나 한도가 풀리면 자동으로 이어집니다.", "읽기 전용: 시트에 쓸 수 없습니다. 권한이나 시트를 확인하세요."] },
+  { title: "콘텐츠 추가", lines: ["홈의 남은 학습 분량이 14일 미만이면 PC에서 콘텐츠를 만드세요.", "설정 > 콘텐츠 > 진도 내보내기 → PC에서 npm run content:gen, content:verify, content:pack → 설정 > 콘텐츠 > 가져오기.", "가져오기는 쓰기 전에 검사 리포트를 보여 주고, 승인해야 반영됩니다."] },
+  { title: "백업", lines: ["설정 > 백업 > JSON 내보내기를 월 1회 해 두세요. 토큰과 비밀번호는 들어 있지 않습니다.", "현재 실행에서만 유지됨 — 백업 권장 경고가 보이면 지금 내보내세요."] },
+  { title: "문제 해결", lines: ["로그인 창이 안 뜨면 팝업 허용을 확인하세요.", "access blocked: Google Cloud 테스트 사용자에 본인 계정이 있어야 합니다.", "기존 기록용 탭이 있어 자동 초기화할 수 없습니다: 새 빈 시트를 쓰세요.", "문제나 해설이 이상하면 해설 화면의 문제 신고를 누르세요."] },
+];
+
+export function renderHelp(root: HTMLElement, ctx: PageCtx): void {
+  root.append(h("h1", {}, "도움말"),
+    ...HELP.map((sec) => h("details", { class: "card" }, h("summary", {}, sec.title), h("ul", {}, ...sec.lines.map((l) => h("li", {}, l))))),
+    btn("설정으로 돌아가기", () => ctx.go("#settings"), "ghost", "help-back"));
 }

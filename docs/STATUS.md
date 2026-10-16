@@ -13,17 +13,19 @@
 | T06 진단·목표·플랜 | DONE(PC Chrome headless) | 0080a9d | 28문항 진단·라우팅·재개, 목표 연도/월, 60분 플랜(청해 제외·재배분·분량 부족 표기). 단위 18+UI 6 PASS |
 | T07 Google 연동·동기화 | **BLOCKED(GOOGLE) — 실제 E2E 미수행** / 코드·가짜 API 테스트 DONE | 18a3ad3 | GIS·URL 파서·Sheets 어댑터·비파괴 초기화·배치 동기화(readback ACK)·증분 로딩·오류 매트릭스·UI 구현. 테스트 59(가짜 Google, 실제 Google 아님). 체크리스트: docs/qa/t07-real-e2e-checklist.md |
 | T08 팩 import/export·신고·진도 | DONE(시트 쓰기는 가짜 API로만 검증) | bd48ed5 | IMP-01~11, 병합 규칙, 5,000항목 계획 0.3초·200행 배치 25회, 신고·flags.json, progress.json(개인정보 0), 런웨이. 테스트 241 PASS |
+| T09 v0.1.0 릴리스 | **DONE(후보), 태그 보류** | (T09) | 통합 QA 기록(docs/qa/v0-qa.md), 릴리스 문서, 도움말, 가이드 대조 테스트, 화면 캡처, 배포 스크립트(스테이징만), 비밀 스캔. 262 테스트 PASS. P0 미해결(실제 Google, Android, 사람 검수, 게시 승인)로 `v0.1.0` 태그는 만들지 않음 |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
 - T00⑤ 청해 선택지 수: 미확인(이미지 PDF, 렌더러 없음)
 - T00⑦ `file://` GIS 거부: 부분 확인(init 성공, 팝업은 헤드리스라 판정 불가)
 - T07 실제 Google E2E: BLOCKED(GOOGLE: Client ID, HTTPS Origin, 테스트 시트, Android 기기). 가짜 API 테스트 통과를 실제 Google 완료로 보고하지 않는다.
+- 사용자 확인 대기: `git push` / GitHub Pages 게시 / 저장소 공개 설정(Free 플랜은 public 필요). 승인 전에는 `npm run deploy`가 site/ 스테이징만 한다.
 - Android 실기기 전 항목: BLOCKED(DEVICE) — T03 레이아웃도 PC Chrome 에뮬레이션 뷰포트만 검증
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T09 v0.1.0 릴리스 (통합 QA, 배포 스크립트, 도움말, 가이드 갱신; 실기기·실제 Google은 BLOCKED, 태그 보류)
+T10 복습 엔진 (T09 기록 완료; 게시 승인은 사용자 확인 대기)
 
 ## 해석·결정 기록
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.
