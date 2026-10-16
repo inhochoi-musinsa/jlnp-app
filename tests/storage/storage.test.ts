@@ -75,6 +75,17 @@ describe("AppStorage", () => {
     const evs = (await b.store.listEvents()).filter((s) => s.event.type === "PROFILE_CREATED");
     expect(evs.length).toBe(1);
   });
+  it("concurrent record() calls (not awaited, as the quiz does) get unique, call-ordered sequence numbers", async () => {
+    const a = await AppStorage.init(new IDBFactory());
+    const types = ["QUESTION_PRESENTED", "QUESTION_SUBMITTED", "ANSWER_REVEALED", "CARD_REVIEWED", "SETTINGS_UPDATED"] as const;
+    const out = await Promise.all(types.map((t) => a.record(t, "x", { contentId: "c" })));
+    const seqs = out.map((e) => e.deviceSeq);
+    expect(new Set(seqs).size).toBe(types.length);
+    expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
+    expect(await a.store.getMeta("deviceSeq")).toBe(Math.max(...seqs));
+    const stored = (await a.store.listEvents()).map((s) => s.event.deviceSeq);
+    expect(new Set(stored).size).toBe(stored.length);
+  });
   it("deviceSeq increases monotonically across reopen", async () => {
     const f = new IDBFactory();
     const a = await AppStorage.init(f);

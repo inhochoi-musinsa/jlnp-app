@@ -1,6 +1,6 @@
 {
   "name": "jlpt-app",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "description": "JLPT study app: single-file dist/index.html + external content CLI",

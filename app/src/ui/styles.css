@@ -66,3 +66,4 @@ details summary{min-height:44px;display:flex;align-items:center;cursor:pointer}
 .dict-input input{width:100%;min-height:52px;padding:0 12px;border-radius:10px;border:2px solid var(--border);background:var(--bg);font-size:1.15em}
 .diff-same{color:var(--fg)}.diff-missing{background:var(--bad-bg);color:var(--bad);border-radius:3px;padding:0 1px}.diff-extra{background:var(--warn-bg);color:var(--warn);text-decoration:line-through;border-radius:3px;padding:0 1px}
 .ok{color:var(--ok)}.bad{color:var(--bad)}
+.chart{display:block;width:100%;height:auto;margin:6px 0}

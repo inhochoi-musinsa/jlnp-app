@@ -1,5 +1,5 @@
 import { FONT_SCALES, FURIGANA_MODES, THEMES, type SettingsStore, type UserSettings } from "../domain/settings";
-import { LEVELS, type Level } from "../../../shared/examSpec";
+import { LEVELS, getExamSpec, type Level } from "../../../shared/examSpec";
 import { runtimeModeLabel, type RuntimeMode } from "../runtime";
 import { h, richText } from "./dom";
 import type { AppStorage } from "../storage/session";
@@ -9,7 +9,11 @@ import type { ConnectionManager } from "../google/connection";
 import type { ImportReport } from "../content/import";
 import { reportLines } from "../content/import";
 import { KINDS, type Kind } from "../../../shared/schema";
-import { TTS_LIMIT_NOTICE } from "../domain/listening";
+import { SOURCE_LABEL, TTS_LIMIT_NOTICE } from "../domain/listening";
+import { EVIDENCE_LABEL, EXCLUDED_LABEL, MIN_SAMPLE, SECTION_NAME, WEAK_NOTE, sectionLines } from "../domain/readiness";
+import { dailyMinutes, officialResults, studiedDays } from "../domain/report";
+import { assessmentSet } from "../domain/assessment";
+import { accuracyChart, barChart, stageChart } from "./charts";
 import { RUNWAY_WARN_DAYS } from "../domain/progress";
 import { DOMAIN_LABEL, DOMAINS } from "../domain/planner";
 import { ROUTE_LABEL, DIAG_GROUPS } from "../domain/diagnostic";
@@ -28,6 +32,7 @@ export interface PageCtx {
   planImport: (text: string, kinds: Kind[], forceAdd: Set<string>) => ImportReport | null;
   applyImport: (text: string, kinds: Kind[], forceAdd: Set<string>) => Promise<string>;
   exportPack: (o: { kinds: Kind[]; includeUnverified: boolean }) => number;
+  recordOfficialResult: (r: { level: Level; year: number; month: number; sectionScores: Record<string, number>; passed: boolean | null }) => Promise<void>;
   exportProgress: () => void;
   exportFlags: () => number;
   startDemo?: () => void;
@@ -150,6 +155,22 @@ export function renderBrief(root: HTMLElement, ctx: PageCtx, b: Brief): void {
       btn("돌아가기", () => ctx.go("#home"), "ghost")));
 }
 
+export function renderAssessMenu(root: HTMLElement, ctx: PageCtx): void {
+  const m = ctx.model!;
+  const level = ctx.settings.get().targetLevel;
+  root.append(h("h1", {}, "실전 세트"),
+    card("안내",
+      h("ul", {}, h("li", {}, "처음 보는 평가 문항만 사용합니다. 학습·진단에서 본 문제는 나오지 않습니다."), h("li", {}, "풀이 후에 해설이 나오며, 같은 문항은 다시 평가에 쓰이지 않습니다."),
+        h("li", {}, "청해는 재생 1회이고, 음원 파일로 재생된 경우만 준비도에 반영됩니다. 브라우저 음성은 평가에 쓰이지 않습니다."), h("li", {}, "시간 제한은 걸지 않습니다. 실전 제한시간 적응도: 미측정")),
+      muted(TTS_LIMIT_NOTICE)),
+    ...getExamSpec(level).scoringSections.map((sec) => {
+      const set = assessmentSet(m.assessPool, m.byId, m.exposed, level, sec.id);
+      return card(SECTION_NAME[sec.id], muted(set.available ? `처음 보는 문항 ${set.available}개 중 ${set.items.length}문항을 풉니다.` : "처음 보는 평가 문항이 없습니다. 콘텐츠를 더 가져오세요."),
+        set.items.length ? btn("세트 시작", () => ctx.go(`#assess-run/${sec.id}`), "primary", `start-assess-${sec.id}`) : null);
+    }),
+    btn("리포트 보기", () => ctx.go("#report"), "ghost", "open-report"), btn("돌아가기", () => ctx.go("#learn"), "ghost"));
+}
+
 const PASSAGE_LABEL: Record<string, string> = { SHORT: "단문", MEDIUM: "중문", LONG: "장문", INFO: "정보검색" };
 export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   const m = ctx.model;
@@ -166,6 +187,8 @@ export function renderLearn(root: HTMLElement, ctx: PageCtx): void {
   root.append(card("독해", muted(rd ? `다음 지문: ${PASSAGE_LABEL[String(rd.passage.payload.type)] ?? "지문"} · 문제 ${rd.questions.length}개` : m && m.readingToday ? "오늘의 새 지문은 이미 읽었습니다." : "읽을 새 지문이 없습니다. 콘텐츠를 가져오면 표시됩니다."), rd ? btn("지문 읽기", () => ctx.go("#reading"), "primary", "start-reading") : null));
   root.append(card("문법 학습", muted(gp ? `문법 포인트 ${gp}개. 설명을 읽고 문맥 문제로 연습합니다.` : "문법 콘텐츠가 아직 없습니다."), gp ? btn("문법 포인트 보기", () => ctx.go("#grammar"), "primary", "open-grammar") : null));
   root.append(card("혼동 글자", muted(kn >= 2 ? `헷갈리는 글자 쌍 ${kn}개로 퀴즈를 풉니다.` : "혼동 글자 콘텐츠가 아직 없습니다. 팩을 가져오면 사용할 수 있습니다."), kn >= 2 ? btn("혼동 글자 퀴즈 시작", () => ctx.go("#kana"), "primary", "start-kana") : null));
+  const sets = m ? getExamSpec(ctx.settings.get().targetLevel).scoringSections.reduce((a, sec) => a + (assessmentSet(m.assessPool, m.byId, m.exposed, ctx.settings.get().targetLevel, sec.id).items.length ? 1 : 0), 0) : 0;
+  root.append(card("실전 세트", muted(sets ? `처음 보는 평가 문항으로 영역별 실력을 확인합니다. 지금 풀 수 있는 영역 ${sets}개.` : "평가용 콘텐츠가 아직 없습니다. 콘텐츠를 가져오면 표시됩니다."), btn("실전 세트 열기", () => ctx.go("#assess"), sets ? "primary" : "ghost", "open-assess")));
   root.append(card("영역별 학습", muted("이후 작업에서 제공됩니다.")));
   if (ctx.startDemo) root.append(card("개발용 레이아웃 데모", btn("퀴즈 데모 시작", ctx.startDemo)));
 }
@@ -193,8 +216,70 @@ export function renderGrammarPoint(root: HTMLElement, ctx: PageCtx, id: string):
     btn("돌아가기", () => ctx.go("#grammar"), "ghost"));
 }
 
-export function renderReport(root: HTMLElement): void {
-  root.append(h("h1", {}, "리포트"), card("리포트", muted("학습 시간·정확도·영역별 준비도는 v3.0.0에서 제공됩니다.")));
+export function renderReport(root: HTMLElement, ctx: PageCtx): void {
+  root.append(h("h1", {}, "리포트"));
+  const m = ctx.model;
+  if (!m) { root.append(muted("불러오는 중입니다.")); return; }
+  const level = ctx.settings.get().targetLevel;
+  // 1. 학습 시간
+  const days = dailyMinutes(m.events, m.today);
+  const total = days.reduce((a, d) => a + d.minutes, 0);
+  root.append(card("학습 시간 (최근 28일)", barChart(days.map((d) => ({ label: d.day.slice(5), value: d.minutes })), { title: `최근 28일 학습 시간: 합계 ${total}분, 학습한 날 ${studiedDays(days)}일`, unit: "분", max: 60 }),
+    h("p", { id: "study-summary" }, `합계 ${total}분 · 학습한 날 ${studiedDays(days)}일 / 28일`), muted("하루 목표는 60분입니다. 쉬는 날이 있어도 괜찮습니다.")));
+  // 2. 숙련도
+  const dist = (st: typeof m.vocabStages) => stageDistribution(st);
+  const stageCard = (name: string, st: typeof m.vocabStages) => st.length ? [h("p", { class: "muted" }, name), stageChart(STAGES.map((x) => dist(st)[x]), STAGES.map((x) => STAGE_NAME[x]), `${name} 숙련도 분포`)] : [];
+  const vs = stageCard("어휘·한자", m.vocabStages), gs = stageCard("문법", m.grammarStages);
+  root.append(card("숙련도 5단계", ...(vs.length || gs.length ? [...vs, ...gs] : [muted("복습 기록이 아직 없습니다.")])));
+  // 3. 영역별 준비도 (평가 문항 기준)
+  const r = m.readiness;
+  root.append(card("영역별 준비도",
+    muted(`처음 보는 평가 문항의 최근 ${r.windowDays}일 기록입니다. 학습 중 이미 본 문제, 정답을 먼저 본 문제, 음원이 없는 청해는 세지 않습니다.`),
+    accuracyChart(r.sections.map((s) => ({ label: SECTION_NAME[s.id], k: s.k, n: s.n, accuracy: s.accuracy, lo: s.interval?.lo, hi: s.interval?.hi, muted: s.evidence !== "OBSERVED" })), "영역별 정답률(평가 문항). 빗금은 자료 부족"),
+    r.overall === "NONE" ? h("p", { id: "readiness-none", class: "banner warn", role: "status" }, "아직 평가 문항을 풀지 않았습니다. 학습 > 실전 세트에서 시작하세요.") : null,
+    btn("실전 세트 열기", () => ctx.go("#assess"), "ghost", "report-open-assess")));
+  for (const s of r.sections) {
+    root.append(h("section", { class: "card", "data-section": s.id },
+      h("h2", {}, SECTION_NAME[s.id]), h("span", { class: s.evidence === "OBSERVED" ? "badge" : "badge warn", "data-evidence": s.evidence }, EVIDENCE_LABEL[s.evidence]),
+      ...sectionLines(s).map((l) => h("p", { class: "muted" }, l)),
+      s.weak ? h("p", { class: "banner warn", role: "status", "data-weak": "1" }, `상대 취약 영역 주의: ${WEAK_NOTE}`) : null,
+      s.sources ? h("div", {}, h("span", { class: "badge", id: "tts-badge" }, "TTS 음원 기반"), h("p", { class: "muted", id: "source-mix" }, `음원 구성: ${Object.entries(s.sources).map(([k, v]) => `${SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]} ${v}`).join(", ") || "아직 없음"}`), h("p", { class: "muted" }, TTS_LIMIT_NOTICE)) : null));
+  }
+  root.append(card("읽는 법",
+    h("ul", {}, h("li", {}, "이 화면은 JLPT 점수나 합격 가능성을 계산하지 않습니다. 공식 점수로 바꾸는 방법이 공개되어 있지 않기 때문입니다."),
+      h("li", {}, `서로 다른 지문·문항 수와 표본 수(n)를 함께 보세요. n이 ${MIN_SAMPLE} 미만이면 "자료 부족"입니다.`), h("li", {}, "실전 제한시간 적응도: 미측정 (타이머를 강제하지 않습니다)")),
+    r.excluded.length ? h("p", { class: "muted", id: "excluded" }, `세지 않은 기록: ${r.excluded.map((x) => `${EXCLUDED_LABEL[x.reason]} ${x.count}건`).join(", ")}`) : null));
+  root.append(officialCard(ctx, level));
+}
+
+function officialCard(ctx: PageCtx, level: Level): HTMLElement {
+  const m = ctx.model!;
+  const spec = getExamSpec(level);
+  const past = officialResults(m.events);
+  const year = h("input", { id: "off-year", type: "number", inputmode: "numeric", min: "2020", max: "2099", "aria-label": "응시 연도" }) as HTMLInputElement;
+  const month = h("select", { id: "off-month", "aria-label": "응시 회차" }, ...[7, 12].map((v) => h("option", { value: v }, MONTH_LABEL(v)))) as HTMLSelectElement;
+  const scores = spec.scoringSections.map((s) => ({ s, input: h("input", { id: `off-${s.id}`, type: "number", inputmode: "numeric", min: "0", max: String(s.maxScaledScore), "aria-label": `${SECTION_NAME[s.id]} 점수` }) as HTMLInputElement }));
+  const pass = h("select", { id: "off-pass", "aria-label": "합격 여부" }, h("option", { value: "" }, "입력 안 함"), h("option", { value: "yes" }, "합격"), h("option", { value: "no" }, "불합격")) as HTMLSelectElement;
+  const err = h("div", { id: "off-error", "aria-live": "polite" });
+  const save = btn("공식 결과 저장", async () => {
+    err.textContent = "";
+    const y = Number(year.value);
+    if (!Number.isInteger(y) || y < 2020 || y > 2099) { err.append(warn("응시 연도를 확인해 주세요.")); return; }
+    const sectionScores: Record<string, number> = {};
+    for (const { s, input } of scores) {
+      if (input.value === "") continue;
+      const v = Number(input.value);
+      if (!Number.isFinite(v) || v < 0 || v > s.maxScaledScore) { err.append(warn(`${SECTION_NAME[s.id]} 점수는 0~${s.maxScaledScore} 사이여야 합니다.`)); return; }
+      sectionScores[s.id] = v;
+    }
+    await ctx.recordOfficialResult({ level, year: y, month: Number(month.value), sectionScores, passed: pass.value === "" ? null : pass.value === "yes" });
+  }, "primary", "off-save");
+  return h("details", { class: "card", id: "official-card", open: past.length > 0 }, h("summary", {}, "실제 공식 시험 결과 기록 (선택)"),
+    muted("응시 후 성적표의 값을 직접 입력합니다. 기록용이며 앱의 정답률과 합치거나 비교해 점수를 추정하지 않습니다."),
+    h("div", { class: "row" }, h("label", { for: "off-year" }, "연도 "), year, h("label", { for: "off-month" }, "회차 "), month),
+    ...scores.map(({ s, input }) => h("div", { class: "row" }, h("label", { for: `off-${s.id}` }, `${SECTION_NAME[s.id]} (0~${s.maxScaledScore}) `), input)),
+    h("div", { class: "row" }, h("label", { for: "off-pass" }, "합격 여부 "), pass), err, save,
+    past.length ? h("ul", { id: "off-list" }, ...past.map((p) => h("li", {}, `${p.level} ${p.year}년 ${MONTH_LABEL(p.month)}: ${Object.entries(p.sectionScores).map(([k, v]) => `${SECTION_NAME[k as keyof typeof SECTION_NAME] ?? k} ${v}`).join(", ") || "점수 없음"}${p.passed === null ? "" : p.passed ? " · 합격" : " · 불합격"} (직접 입력)`))) : null);
 }
 
 export function renderDiagIntro(root: HTMLElement, ctx: PageCtx): void {

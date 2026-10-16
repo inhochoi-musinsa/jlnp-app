@@ -12,6 +12,7 @@ import { computeRunway, dailyIntake, READING_NEW_PER_DAY, type Runway } from "./
 import { buildQueue, observedSecondsPerCard, replayCards, wordStage, type CardState, type ReviewQueue, type Stage } from "./domain/srs";
 import { allCards, directionsFor } from "./domain/cards";
 import { kanaPairs } from "./domain/kana";
+import { computeReadiness, type Readiness } from "./domain/readiness";
 import { dictationItems, listeningUnits, LISTENING_NEW_PER_DAY } from "./domain/listening";
 
 export interface AppModel {
@@ -21,6 +22,9 @@ export interface AppModel {
   records: ContentRecord[];
   /** active, studyable, not flagged (UNVERIFIED only when the setting is on) */
   pool: ContentRecord[];
+  /** verified assessment-only records (kept out of `pool` so no learning screen can show them) */
+  assessPool: ContentRecord[];
+  readiness: Readiness;
   flags: Map<string, FlagInfo>;
   retired: Set<string>;
   runway: Runway;
@@ -67,7 +71,10 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const fp = flagProjection(events);
   const records = activeVersions(rows);
   const byId = indexRecords(records);
-  const pool = studyPool(rows, fp, settings.includeUnverified);
+  const studyAll = studyPool(rows, fp, settings.includeUnverified);
+  // the ASSESS pool never reaches a learning or review screen
+  const pool = studyAll.filter((r) => r.pool !== "ASSESS");
+  const assessPool = studyAll.filter((r) => r.pool === "ASSESS" && r.verification.status === "VERIFIED");
   const today = todayKey(now, settings.timezone);
   const diagItems = buildDiagnostic(records.filter((r) => effectiveStatus(r, fp) === "VERIFIED"), settings.targetLevel);
   const diag = diagnosticState(diagItems, events);
@@ -131,7 +138,7 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const runway = computeRunway(pool, events, route, { unseenVocabWords: unseenItems(false), unseenGrammarPoints: unseenItems(true) });
   return {
     cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, readingNext, readingToday, listeningNext, listeningToday, dictation: dictationItems(pool), review, secondsPerCard, newToday, vocabStages, vocab,
-    rows, records, pool, flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), diag, today, activeSecondsToday,
+    rows, records, pool, assessPool, readiness: computeReadiness(events, byId, settings.targetLevel, now, settings.timezone), flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), diag, today, activeSecondsToday,
     pending: storage ? (await storage.pendingCount()) : 0, plan, exposed, studyQuestions, notes,
   };
 }

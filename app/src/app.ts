@@ -5,8 +5,10 @@ import { DEMO_ITEMS } from "./content/demoItems";
 import { QuizShell } from "./ui/quiz";
 import { DictationShell } from "./ui/dictation";
 import type { PlayerDeps } from "./ui/audio";
+import { assessmentSet } from "./domain/assessment";
+import type { ScoringSectionId } from "../../shared/examSpec";
 import { quizItemFor, TTS_LIMIT_NOTICE } from "./domain/listening";
-import { renderBrief, renderGrammarList, renderGrammarPoint, renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
+import { renderAssessMenu, renderBrief, renderGrammarList, renderGrammarPoint, renderDiagIntro, renderDiagResult, renderHelp, renderHome, renderLearn, renderReport, renderSettings, type PageCtx } from "./ui/pages";
 import { buildTabBar, tabFromHash, type TabId } from "./ui/shell";
 import { h } from "./ui/dom";
 import { AppStorage } from "./storage/session";
@@ -39,12 +41,13 @@ export function applySettings(doc: Document, s: UserSettings): void {
 function loadHint(): unknown { try { return JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null"); } catch { return null; } }
 function saveHint(s: UserSettings): void { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* storage may be unavailable */ } }
 
-type Route = TabId | "demo" | "reading" | "reading-run" | "listening" | "listening-run" | "dictation" | "dictation-run" | "grammar" | "gp" | "gp-run" | "kana" | "kana-run" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
-const EXTRA_ROUTES = ["reading", "reading-run", "listening", "listening-run", "dictation", "dictation-run", "grammar", "kana", "kana-run", "diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
+type Route = TabId | "demo" | "reading" | "reading-run" | "assess" | "assess-run" | "listening" | "listening-run" | "dictation" | "dictation-run" | "grammar" | "gp" | "gp-run" | "kana" | "kana-run" | "diag" | "diag-run" | "diag-result" | "study" | "help" | "review" | "review-run" | "weak" | "weak-run";
+const EXTRA_ROUTES = ["assess", "reading", "reading-run", "listening", "listening-run", "dictation", "dictation-run", "grammar", "kana", "kana-run", "diag", "diag-run", "diag-result", "study", "help", "review", "review-run", "weak", "weak-run"];
 const routeOf = (hash: string): Route => {
   const id = hash.replace(/^#/, "");
   if (id.startsWith("gp/")) return "gp";
   if (id.startsWith("gp-run/")) return "gp-run";
+  if (id.startsWith("assess-run/")) return "assess-run";
   if (EXTRA_ROUTES.includes(id)) return id as Route;
   const t = tabFromHash(hash);
   return t === "quiz" ? "learn" : t;
@@ -70,21 +73,32 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
 
   const testNow = mode === "LOCALHOST_DEV" ? (window as unknown as { __JLPT_TEST_NOW__?: string }).__JLPT_TEST_NOW__ : undefined;
   const now = (): Date => (testNow ? new Date(testNow) : new Date());
-  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run", "kana-run", "gp-run", "reading-run", "listening-run", "dictation-run"].includes(routeOf(location.hash));
+  const isQuizRoute = () => ["diag-run", "study", "demo", "review-run", "weak-run", "kana-run", "gp-run", "reading-run", "listening-run", "dictation-run", "assess-run"].includes(routeOf(location.hash));
   const isEditing = () => { const a = document.activeElement; return !!a && ["INPUT", "SELECT", "TEXTAREA"].includes(a.tagName); };
   // Background updates (sync status, pulls) never tear down a running quiz or a half-typed form.
-  const refresh = async (force = true) => { model = await loadModel(storage, settings.get(), now()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
+  const refresh = async (force = true) => { await settleRecords(); model = await loadModel(storage, settings.get(), now()); if (force || (!isQuizRoute() && !isEditing())) draw(); };
   const go = (hash: string) => { if (location.hash === hash) draw(); else location.hash = hash; };
 
   const flushClock = (): void => {
     const seconds = Math.round(clock.take(Date.now()) / 1000);
     if (seconds >= 1 && storage) storage.record("STUDY_INTERVAL_COMPLETED", "study", { dayKey: todayKey(now(), settings.get().timezone), activity, seconds }).catch(() => {});
   };
-  const rec = (type: Parameters<AppStorage["record"]>[0], entity: string, payload: unknown) => storage?.record(type, entity, payload).catch(() => {});
+  // events are written without awaiting (the quiz must not wait for storage), but a model rebuilt right after
+  // a quiz must see every one of them, so refresh() first waits for the writes still in flight
+  const inflight = new Set<Promise<unknown>>();
+  const settleRecords = async (): Promise<void> => { while (inflight.size) await Promise.allSettled([...inflight]); };
+  const rec = (type: Parameters<AppStorage["record"]>[0], entity: string, payload: unknown) => {
+    if (!storage) return undefined;
+    const pr = storage.record(type, entity, payload).catch(() => {});
+    inflight.add(pr);
+    void pr.then(() => inflight.delete(pr));
+    return pr;
+  };
 
+  const startedAssess = new Set<string>();
   const audioMeta = new Map<string, { source: string; plays: number }>();
   const audioDeps = (globalThis as { __JLPT_AUDIO_DEPS__?: PlayerDeps }).__JLPT_AUDIO_DEPS__;
-  const runQuiz = (host: HTMLElement, items: QuizItem[], o: { exposureType: "DIAGNOSTIC" | "PRACTICE"; activity: string; offset?: number; total?: number; onFinish: () => void; onExit: () => void }) => {
+  const runQuiz = (host: HTMLElement, items: QuizItem[], o: { exposureType: "DIAGNOSTIC" | "PRACTICE" | "ASSESSMENT"; activity: string; offset?: number; total?: number; onFinish: () => void; onExit: () => void }) => {
     activity = o.activity;
     clock.touch(Date.now());
     let qStart = 0;
@@ -122,7 +136,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       const q = r ? cardQuestion(r, c.direction, model.pool, dayKey(), true, model.cardStates.get(`${c.contentId}#${c.direction}`)?.reviews ?? 0) : null;
       if (q) session.insertAfterCurrent(q);
     };
-    const audioOpts = () => ({ maxPlays: o.exposureType === "DIAGNOSTIC" ? 1 : settings.get().practiceReplays === "ONCE" ? 1 : null, allowBrowserTts: settings.get().browserTtsFallback, deps: audioDeps, onPlay: (it: QuizItem, source: string, plays: number) => { audioMeta.set(it.id, { source, plays }); } });
+    const audioOpts = () => ({ maxPlays: o.exposureType !== "PRACTICE" ? 1 : settings.get().practiceReplays === "ONCE" ? 1 : null, allowBrowserTts: o.exposureType === "PRACTICE" && settings.get().browserTtsFallback, deps: audioDeps, onPlay: (it: QuizItem, source: string, plays: number) => { audioMeta.set(it.id, { source, plays }); } });
     return new QuizShell(host, items, { audio: audioOpts(), onEvent, afterSubmit, onReport: (item) => openReport(item), progress: o.total ? { offset: o.offset ?? 0, total: o.total } : undefined, onExit: () => { flushClock(); o.onExit(); }, onFinish: () => { flushClock(); o.onFinish(); } });
   };
 
@@ -171,6 +185,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       const s = r.summary;
       return `${r.toWrite.length}건을 반영했습니다 (신규 ${s.added} · 새 버전 ${s.newVersions} · 중복 ${s.duplicates} · 충돌 ${s.conflicts} · 거부 ${s.rejected} · 보류 ${s.held} · 강등 ${s.demoted}).${sheetNote}`;
     },
+    recordOfficialResult: async (r) => { await storage?.record("OFFICIAL_RESULT_REPORTED", "official-result", { ...r, source: "USER_DECLARED" }); await refresh(); },
     exportPack: ({ kinds, includeUnverified }) => {
       const pack = exportPackFn(model?.rows ?? [], { kinds: kinds.length ? kinds : undefined, includeUnverified }, { flagged: model?.flags ?? new Map(), retired: model?.retired ?? new Set() }, { appVersion: __APP_VERSION__ });
       download(packFileName(pack, kinds), pack);
@@ -225,6 +240,23 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       root.append(view, buildTabBar("learn"));
       const ln = model.listeningNext;
       renderBrief(view, ctx, { title: "청해", purpose: ln.length ? "소리를 듣고 문제를 풉니다. 재생 버튼을 눌러야 음원을 받습니다." : "들을 새 청해가 없습니다.", count: ln.length, minutes: ln.length * 2, startHash: "#listening-run", extra: [TTS_LIMIT_NOTICE, "해설 화면에서 [스크립트 보기]와 [다시 듣기]를 쓸 수 있습니다."] });
+      return;
+    }
+    if (route === "assess" && model) {
+      const view = h("main", { class: "view" });
+      root.append(view, buildTabBar("learn"));
+      renderAssessMenu(view, ctx);
+      return;
+    }
+    if (route === "assess-run" && model) {
+      const host = h("main", { class: "view-quiz" });
+      root.append(host);
+      const section = decodeURIComponent(location.hash.replace(/^#assess-run\//, "")) as ScoringSectionId;
+      const set = assessmentSet(model.assessPool, model.byId, model.exposed, settings.get().targetLevel, section);
+      if (!set.items.length) { go("#assess"); return; }
+      const startKey = `${section}:${set.items[0]!.id}`;
+      if (!startedAssess.has(startKey)) { startedAssess.add(startKey); rec("ASSESSMENT_STARTED", "assessment", { section, count: set.items.length, level: settings.get().targetLevel }); }
+      quiz = runQuiz(host, set.items, { exposureType: "ASSESSMENT", activity: "ASSESSMENT", onExit: () => { void refresh().then(() => go("#assess")); }, onFinish: () => { rec("ASSESSMENT_COMPLETED", "assessment", { section, count: set.items.length, level: settings.get().targetLevel }); void refresh().then(() => go("#report")); } });
       return;
     }
     if (route === "dictation" && model) {
@@ -306,7 +338,7 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
       }
       return;
     }
-    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : ["study", "grammar", "gp", "kana", "reading", "listening", "dictation"].includes(route) ? "learn" : route === "help" ? "settings" : (route as TabId);
+    const tab: TabId = ["diag", "diag-run", "diag-result", "review", "weak"].includes(route) ? "home" : ["study", "grammar", "gp", "kana", "reading", "listening", "dictation", "assess"].includes(route) ? "learn" : route === "help" ? "settings" : (route as TabId);
     const banner = mode === "LOCAL_FILE" ? h("div", { class: "banner warn", role: "status" }, "로컬 모드: Google 연결이 되지 않으며 기록이 이 기기에 보존된다는 보장이 없습니다. 백업을 자주 내보내세요.") : null;
     const view = h("main", { class: "view" });
     if (banner) root.append(banner);

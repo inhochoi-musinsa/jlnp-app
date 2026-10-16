@@ -19,6 +19,8 @@
 | T12 콘텐츠 런 1 → v1.0.0 | **기계장치 DONE / 분량 BLOCKED(COST)** | f96d8e1 | content:plan·fill·taxonomy 구현·테스트(가짜 LLM 8+3). 실제 생성: 혼동쌍 20/20 완료(헤드리스, 59콜), 어휘 400·문법 40·한자 문항 100은 예상 2,039콜이라 승인 대기. 신규 상한을 카드→항목(단어/포인트) 단위로 정정. docs/releases/V1.md |
 | T13 독해 UI | DONE(PC Chrome headless) | 28dc963 | 지문 원본 페이지 구분 유지·페이징, 고정 문제줄+보기 4개, 해설에서 지문/해설 전환, 하루 새 지문 1개, 런웨이·플랜·진도 반영, stimulusId 노출 기록. 3뷰포트×4글자크기×3지문 유형 한 화면 검증 |
 | T14 청해·오디오 | DONE(PC Chrome headless; TTS는 macos-say 로컬 확인) / BLOCKED(TTS: 실제 Google 합성), BLOCKED(DEVICE: Android 재생) | a2c581c | 재생기(녹음 오버라이드>생성 파일>브라우저 음성, 재생 횟수, 소스 배지, TTS 한계 문구), 오디오 패널·스크립트/다시 듣기, 듣고 쓰기, 청해 하루 2개·런웨이, `content:audio`. 실제 headless 생성·검증 청해 1문항을 macos-say로 합성해 Chrome 재생 확인(로컬 전용, 게시 금지). 청해 수정(revise) 시 음원 키가 깨지던 버그 수정 |
+| T15 콘텐츠 런 2 | BLOCKED(COST: 호출 상한 미승인), BLOCKED(TTS: 실제 Google 합성 키 없음) | - | 독해 10 지문·청해 40 생성은 T12와 같은 headless 호출 상한 승인이 필요하다. 청해 1문항만 로컬 스모크(macos-say, 게시 금지)로 생성·검증·재생 확인 |
+| T16 평가·준비도·리포트 | DONE(PC Chrome headless) / BLOCKED(COST: 평가 문항 영역당 60) | (커밋 후 기입) | 실전 세트(ASSESS 풀 격리·신규 노출만), 준비도(28일·첫 노출·정답 미공개·청해 음원 유효, n 0/<20/≥20/≥30 분기, 상대 취약), SVG 리포트(학습 시간·숙련도·영역 정답률), TTS 배지·음원 구성, 공식 결과 직접 입력. 확률·예상 점수 문구 0회(테스트). 부수 수정: deviceSeq 중복, 퀴즈 직후 모델 지연, 청해 수정 시 음원 키 소실 |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
@@ -31,9 +33,13 @@
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T15 콘텐츠 런 2 → v2.0.0 (독해 10 지문, 청해 40 + 음원 합성: 호출 상한 승인과 TTS 키가 없으면 BLOCKED(COST)/BLOCKED(TTS))
+T17 안정화 → v4.0.0 (스냅샷, 스키마 마이그레이션, 대용량, 다기기)
+
+- **BLOCKED(COST) T15/T16 콘텐츠**: 독해 10 지문·청해 40(+음원), 평가 문항 영역당 60개. 평가 문항은 블라인드 풀이 4회라 60문항당 약 470 호출(`--dry-run` 추정). 호출 상한 승인 후 `content:gen --pool ASSESS`.
+- T16 정책값(28일, n<20, 0.60, 0.15p, 청해 1회 재생)은 plan.md §9의 [실무 제안] 값이며 검증된 컷오프가 아니다.
 
 ## 해석·결정 기록
+- T16: ASSESS 레코드는 `AppModel.pool`에서 제외하고 `assessPool`로만 접근한다(학습·복습 화면이 우연히 쓸 수 없도록). 브라우저 음성은 평가·준비도에서 항상 제외(설정으로 포함하는 옵션은 두지 않음). 평가 세트 크기: 언어지식 10, 독해 6(지문 단위), 청해 6.
 - T14: LISTENING→QUESTION은 `questionId`로만 연결(역참조는 id 순환). 앱은 청해에 연결된 문제를 낱개 연습에서 제외한다. 설정 변경 직후의 늦은 `refresh()`가 진행 중인 퀴즈를 다시 그리던 문제를 퀴즈 경로에서는 강제 재그리기를 하지 않도록 고침.
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.
 - 생성 단계 자기 수리(`repairDraft`): V1 위반 초안을 검증 호출 전에 생성 모델에게 최대 2회 되돌려 보낸다. V1 자체의 "즉시 REJECT"는 그대로.

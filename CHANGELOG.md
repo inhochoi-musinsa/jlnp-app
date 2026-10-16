@@ -2,7 +2,15 @@
 
 Sections: Added / Changed / Fixed / Migrated / Content / Compatibility / Known Issues
 
-## Unreleased (T14 listening)
+## 3.0.0 (release candidate, not tagged)
+### Added
+- Assessment sets (ASSESS pool isolated from learning), readiness (28 days, first exposure, n<20 자료 부족), SVG report, declared official results.
+### Fixed
+- Duplicate `deviceSeq` for concurrent event writes; stale model right after a quiz; listening audio key lost in revision.
+### Known Issues
+- Assessment content volume BLOCKED(COST); readiness thresholds are unvalidated operating policy.
+
+## 2.0.0 (T13–T14, not separately tagged)
 ### Added
 - Listening player (generated file > recorded override > browser voice), replay limit, source badge, TTS limit notice, script/replay in feedback.
 - Dictation (듣고 쓰기) with kana diff; `content:audio`; settings > 고급.

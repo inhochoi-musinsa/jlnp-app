@@ -29,13 +29,17 @@ export class AppStorage {
     return s;
   }
 
+  private metaWrite: Promise<void> = Promise.resolve();
   get persistent(): boolean { return this.store.kind === "indexeddb"; }
 
   /** Resolves only after the local commit. Callers must not show "saved" earlier. */
   async record(type: EventType, entityId: string, payload: unknown): Promise<SyncEvent> {
-    this.seq++;
-    await this.store.setMeta("deviceSeq", this.seq);
-    const e = createEvent({ profileId: this.profileId, deviceId: this.deviceId, deviceSeq: this.seq, type, entityId, payload });
+    // the sequence number and timestamp are taken synchronously, so concurrent record() calls keep their call order
+    const seq = ++this.seq;
+    const now = new Date();
+    const e = createEvent({ profileId: this.profileId, deviceId: this.deviceId, deviceSeq: seq, type, entityId, payload, now });
+    this.metaWrite = this.metaWrite.then(() => this.store.setMeta("deviceSeq", seq));
+    await this.metaWrite;
     await this.store.appendEvent(e);
     this.onRecorded?.(e);
     return e;
