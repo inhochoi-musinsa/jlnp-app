@@ -4,6 +4,10 @@ import type { ContentRecord } from "../../../shared/schema";
 export type SyncStatus = "PENDING" | "SYNCED";
 export interface StoredEvent { event: SyncEvent; status: SyncStatus; syncedAt?: string }
 
+export type SnapshotReason = "MANUAL" | "BEFORE_RESTORE" | "AFTER_UPGRADE";
+/** A local recovery point: a complete JSON backup kept inside the device database (never deleted by a restore). */
+export interface Snapshot { id: string; createdAt: string; reason: SnapshotReason; appVersion: string; eventCount: number; fromDbVersion?: number; backup: string }
+
 /** Device cache + outbox. `kind` tells the UI whether data survives a reload. */
 export interface LocalStore {
   readonly kind: "indexeddb" | "memory";
@@ -17,6 +21,9 @@ export interface LocalStore {
   /** Content cache (rows pulled from the sheet or imported). Key: contentId@contentVersion. */
   putContent(records: ContentRecord[]): Promise<void>;
   listContent(): Promise<ContentRecord[]>;
+  putSnapshot(s: Snapshot): Promise<void>;
+  listSnapshots(): Promise<Snapshot[]>;
+  deleteSnapshot(id: string): Promise<void>;
   /** Explicit, user-confirmed deletion only. */
   clearAll(): Promise<void>;
 }

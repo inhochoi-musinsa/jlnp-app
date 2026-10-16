@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IDBFactory } from "fake-indexeddb";
 import { SyncCoordinator, SYNC, type SyncStatus } from "../../app/src/storage/sync";
-import { SheetsClient, SheetsEventLog } from "../../app/src/google/sheets";
+import { SheetsClient, SheetsEventLog, eventToRow } from "../../app/src/google/sheets";
 import { initialize, inspect } from "../../app/src/google/init";
 import { AppStorage } from "../../app/src/storage/session";
 import { createEvent } from "../../app/src/storage/events";
 import { FakeSheets } from "./fakeSheets";
 import { SEED_PACK } from "../../app/src/content/seed";
 import { SHEET_TABS } from "../../shared/sheetSchema";
-import { projectExamTarget } from "../../app/src/domain/target";
+import { projectExamTarget, targetConflict, targetHeads } from "../../app/src/domain/target";
 import { MockSheetsAdapter } from "../../app/src/storage/mockSheets";
 import { MemoryStore } from "../../app/src/storage/local";
 
@@ -211,6 +211,38 @@ describe("two devices (FAKE Sheets API)", () => {
     expect(toastsA.length).toBeGreaterThan(0);
     expect(events(a).length).toBe(all.length); // every logical event once in the sheet
   });
+  it("TST-SYNC-03: target changed on both devices without seeing each other -> conflict is shown, nothing lost, resolved by the learner", async () => {
+    const a = await rig();
+    const b = await rig({ fake: a.fake });
+    const all = async (r: Rig) => (await r.dev.store.listEvents()).map((s) => s.event);
+    // both devices knew no target (basedOn = []) and chose different ones while offline
+    await a.dev.record("EXAM_TARGET_SELECTED", "exam", { level: "N3", year: 2099, month: 7, basedOn: [] });
+    await new Promise((r) => setTimeout(r, 5));
+    await b.dev.record("EXAM_TARGET_SELECTED", "exam", { level: "N3", year: 2099, month: 12, basedOn: [] });
+    await a.sync.flush("manual"); await b.sync.flush("manual"); await a.sync.flush("manual");
+    const conflict = targetConflict(await all(a));
+    expect(conflict?.options.map((o) => o.month).sort()).toEqual([12, 7]);
+    expect(targetConflict(await all(b))?.headIds.sort()).toEqual(conflict!.headIds.sort());
+    // the learner on device a picks one option; it is based on both heads
+    await a.dev.record("EXAM_TARGET_SELECTED", "exam", { level: "N3", year: 2099, month: 7, basedOn: conflict!.headIds, resolved: true });
+    await a.sync.flush("manual"); await b.sync.flush("manual");
+    for (const r of [a, b]) {
+      const evs = await all(r);
+      expect(targetConflict(evs)).toBeNull();
+      expect(targetHeads(evs).length).toBe(1);
+      expect(projectExamTarget(evs, "N3")).toMatchObject({ targetYear: 2099, targetMonth: 7 });
+    }
+    expect((await all(a)).filter((e) => e.type === "EXAM_TARGET_SELECTED").length).toBe(3); // every choice is kept in the log
+  });
+  it("same target chosen on both devices is not a conflict; legacy events without basedOn keep the old latest-wins chain", async () => {
+    const mk = (n: number, device: string, p: object, at: string) => createEvent({ profileId: "p", deviceId: device, deviceSeq: n, type: "EXAM_TARGET_SELECTED", entityId: "exam", payload: p, now: new Date(at) });
+    const same = [mk(1, "d1", { level: "N3", year: 2099, month: 7, basedOn: [] }, "2099-01-01T00:00:00Z"), mk(1, "d2", { level: "N3", year: 2099, month: 7, basedOn: [] }, "2099-01-01T00:00:01Z")];
+    expect(targetHeads(same).length).toBe(2);
+    expect(targetConflict(same)).toBeNull();
+    const legacy = [mk(1, "d1", { level: "N3", year: 2099, month: 7 }, "2099-01-01T00:00:00Z"), mk(1, "d2", { level: "N3", year: 2099, month: 12 }, "2099-01-02T00:00:00Z")];
+    expect(targetConflict(legacy)).toBeNull();
+    expect(projectExamTarget(legacy, "N3")).toMatchObject({ targetMonth: 12 });
+  });
   it("a new device restores everything from the sheet", async () => {
     const a = await rig();
     await addEvents(a.dev, 12);
@@ -221,6 +253,34 @@ describe("two devices (FAKE Sheets API)", () => {
     expect(fe.length).toBe(12);
     expect((await fresh.dev.store.getMeta<number>("eventRowCursor"))).toBeGreaterThan(12);
   });
+});
+
+describe("large logs (FAKE Sheets API)", () => {
+  it("a new device restores 12,000 remote events in 500-row chunks without loss or duplicates; pushing 1,000 uses 200-row batches", async () => {
+    const a = await rig();
+    // write the remote rows directly (what many earlier sessions on another device would have left behind)
+    const tab = a.fake.tab(ID, SHEET_TABS.EVENTS)!;
+    const rows: string[][] = [];
+    for (let i = 0; i < 12000; i++) {
+      const e = createEvent({ profileId: "p1", deviceId: "other", deviceSeq: i + 1, type: "QUESTION_SUBMITTED", entityId: `q${i}`, payload: { i }, eventId: `bulk-${i}` });
+      rows.push(eventToRow(e).map(String));
+    }
+    const head = tab.rows[0]!;
+    tab.rows = [head, ...rows];
+    const fresh = await rig({ fake: a.fake });
+    const before = a.fake.requests.length;
+    await fresh.sync.flush("manual");
+    const got = (await fresh.dev.store.listEvents()).filter((s) => s.event.deviceId === "other");
+    expect(got.length).toBe(12000);
+    expect(new Set(got.map((s) => s.event.eventId)).size).toBe(12000);
+    const reads = a.fake.requests.slice(before).filter((r) => r.method === "GET").length;
+    expect(reads).toBeLessThanOrEqual(Math.ceil(12000 / SYNC.PULL_CHUNK) + 6);
+    await addEvents(fresh.dev, 1000);
+    const b2 = a.fake.requests.length;
+    await fresh.sync.flush("manual");
+    expect(a.fake.requests.slice(b2).filter((r) => /:append/.test(r.path)).length).toBe(5);
+    expect(await fresh.dev.pendingCount()).toBe(0);
+  }, 120000);
 });
 
 describe("MockSheetsAdapter contract (labelled MOCK)", () => {

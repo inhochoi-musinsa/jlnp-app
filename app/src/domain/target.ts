@@ -1,4 +1,4 @@
-import type { Level } from "../../../shared/examSpec";
+import { DEFAULT_TARGET_LEVEL, type Level } from "../../../shared/examSpec";
 
 export type ExamMonth = 7 | 12;
 export type DateStatus = "NOT_SELECTED" | "EXPECTED" | "CONFIRMED";
@@ -99,3 +99,38 @@ export function projectExamTarget(events: SyncEvent[], level: Level): ExamTarget
   }
   return t;
 }
+
+export interface TargetOption { eventId: string; level: Level; year: number | null; month: number | null; at: string; deviceId: string }
+
+/** `basedOn` of a target event: the head event id(s) the device saw when the learner chose; absent on events from before v4. */
+const basedOnOf = (p: Record<string, unknown>): string[] | undefined =>
+  p.basedOn === undefined ? undefined : Array.isArray(p.basedOn) ? (p.basedOn as unknown[]).filter((x): x is string => typeof x === "string") : typeof p.basedOn === "string" ? [p.basedOn] : [];
+
+/**
+ * Target events nobody has superseded yet. One head is the normal case. Two or more heads with different values mean two
+ * devices changed the target without having seen each other: the learner must choose (plan.md §6.2); nothing is overwritten
+ * meanwhile (the log is append-only) and the latest head is used as the provisional target.
+ * Events without `basedOn` (written before v4.0.0) are treated as a chain ordered by time, exactly as before.
+ */
+export function targetHeads(events: SyncEvent[]): TargetOption[] {
+  const list = events.filter((e) => e.type === "EXAM_TARGET_SELECTED").sort(replayOrder);
+  const referenced = new Set<string>();
+  list.forEach((e, i) => {
+    const p = JSON.parse(e.payloadJson) as Record<string, unknown>;
+    const b = basedOnOf(p);
+    for (const id of b ?? (i > 0 ? [list[i - 1]!.eventId] : [])) referenced.add(id);
+  });
+  return list.filter((e) => !referenced.has(e.eventId)).map((e) => {
+    const p = JSON.parse(e.payloadJson) as { level?: Level; year?: number | null; month?: number | null };
+    return { eventId: e.eventId, level: p.level ?? DEFAULT_TARGET_LEVEL, year: p.year ?? null, month: p.month ?? null, at: e.occurredAt, deviceId: e.deviceId };
+  });
+}
+
+/** Distinct competing options (same level/year/month from two devices is not a conflict), or null. */
+export function targetConflict(events: SyncEvent[]): { options: TargetOption[]; headIds: string[] } | null {
+  const heads = targetHeads(events);
+  const seen = new Map<string, TargetOption>();
+  for (const h of heads) { const k = `${h.level}|${h.year}|${h.month}`; if (!seen.has(k)) seen.set(k, h); }
+  return seen.size > 1 ? { options: [...seen.values()], headIds: heads.map((h) => h.eventId) } : null;
+}
+

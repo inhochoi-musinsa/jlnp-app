@@ -133,7 +133,7 @@ describe("T06 diagnostic, target and plan in a real browser", () => {
     await page.fill("#target-year", "2020"); await page.selectOption("#target-month", "7"); await page.click("#save-target");
     await page.waitForSelector("text=선택 회차가 이미 지났습니다");
     expect(await page.textContent("#target-current")).toContain("2099년 12월"); // unchanged
-    await page.locator("details summary").click();
+    await page.locator("details summary", { hasText: "공식 시험일 입력" }).click();
     await page.fill("#confirm-date", "2099-12-06"); await page.fill("#confirm-url", "http://example.com");
     await page.click("#save-confirm");
     await page.waitForSelector("text=공식 공고의 https 주소");

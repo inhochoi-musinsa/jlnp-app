@@ -21,6 +21,7 @@
 | T14 청해·오디오 | DONE(PC Chrome headless; TTS는 macos-say 로컬 확인) / BLOCKED(TTS: 실제 Google 합성), BLOCKED(DEVICE: Android 재생) | a2c581c | 재생기(녹음 오버라이드>생성 파일>브라우저 음성, 재생 횟수, 소스 배지, TTS 한계 문구), 오디오 패널·스크립트/다시 듣기, 듣고 쓰기, 청해 하루 2개·런웨이, `content:audio`. 실제 headless 생성·검증 청해 1문항을 macos-say로 합성해 Chrome 재생 확인(로컬 전용, 게시 금지). 청해 수정(revise) 시 음원 키가 깨지던 버그 수정 |
 | T15 콘텐츠 런 2 | BLOCKED(COST: 호출 상한 미승인), BLOCKED(TTS: 실제 Google 합성 키 없음) | - | 독해 10 지문·청해 40 생성은 T12와 같은 headless 호출 상한 승인이 필요하다. 청해 1문항만 로컬 스모크(macos-say, 게시 금지)로 생성·검증·재생 확인 |
 | T16 평가·준비도·리포트 | DONE(PC Chrome headless) / BLOCKED(COST: 평가 문항 영역당 60) | ebe9395 | 실전 세트(ASSESS 풀 격리·신규 노출만), 준비도(28일·첫 노출·정답 미공개·청해 음원 유효, n 0/<20/≥20/≥30 분기, 상대 취약), SVG 리포트(학습 시간·숙련도·영역 정답률), TTS 배지·음원 구성, 공식 결과 직접 입력. 확률·예상 점수 문구 0회(테스트). 부수 수정: deviceSeq 중복, 퀴즈 직후 모델 지연, 청해 수정 시 음원 키 소실 |
+| T17 안정화 | DONE(PC Chrome headless; 가짜 Sheets) / BLOCKED(GOOGLE: 시트 스키마 마이그레이션·`_JLPT_SNAPSHOTS`), BLOCKED(DEVICE: 모바일 성능) | (커밋 후 기입) | 로컬 복구 지점(업그레이드·복원 직전 자동, 5개, 합집합 복원), IndexedDB v3 단계 업그레이드, 실제 옛 빌드(t06/v0.1.0/t12/t14) 덤프·백업 fixture 복원 검증(손실 0, seq 중복 데이터 포함), deviceSeq 복구, 두 기기 목표 충돌 선택 카드, 대용량(로컬 10만 건 부팅 ≈1 s, 시트 1.2만 행 복원). `.gitignore` 오류로 tools/·tests/content/·app/src/content/가 이전 커밋에 빠져 있던 문제 수정(a699c9a) |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
@@ -33,12 +34,13 @@
 - TTS 약관, headless 구독 자동화 약관: 미확인(사용자 확인 필요)
 
 ## 다음 작업
-T17 안정화 → v4.0.0 (스냅샷, 스키마 마이그레이션, 대용량, 다기기)
+T18 N2/N1 확장 (별도 승인 필요 → BLOCKED(APPROVAL))
 
 - **BLOCKED(COST) T15/T16 콘텐츠**: 독해 10 지문·청해 40(+음원), 평가 문항 영역당 60개. 평가 문항은 블라인드 풀이 4회라 60문항당 약 470 호출(`--dry-run` 추정). 호출 상한 승인 후 `content:gen --pool ASSESS`.
 - T16 정책값(28일, n<20, 0.60, 0.15p, 청해 1회 재생)은 plan.md §9의 [실무 제안] 값이며 검증된 컷오프가 아니다.
 
 ## 해석·결정 기록
+- T17: 시트 스키마는 올리지 않았다(실제 Google에서 검증 불가). 자세한 결정과 측정: docs/decisions/snapshots-and-migration.md. 이전 커밋에는 tools/, tests/content/, app/src/content/가 없다(.gitignore 오류, a699c9a에서 수정).
 - T16: ASSESS 레코드는 `AppModel.pool`에서 제외하고 `assessPool`로만 접근한다(학습·복습 화면이 우연히 쓸 수 없도록). 브라우저 음성은 평가·준비도에서 항상 제외(설정으로 포함하는 옵션은 두지 않음). 평가 세트 크기: 언어지식 10, 독해 6(지문 단위), 청해 6.
 - T14: LISTENING→QUESTION은 `questionId`로만 연결(역참조는 id 순환). 앱은 청해에 연결된 문제를 낱개 연습에서 제외한다. 설정 변경 직후의 늦은 `refresh()`가 진행 중인 퀴즈를 다시 그리던 문제를 퀴즈 경로에서는 강제 재그리기를 하지 않도록 고침.
 - IMP-10 필수 검사: BLIND_SOLVE·DISTRACTOR_CHECK는 선택지가 있는 QUESTION에만 적용, 다른 종류는 SCHEMA_LINT+QUALITY_CHECK로 판정(`shared/verification.ts`). 선택지 없는 항목에 PASS를 꾸며 기록하지 않기 위함.

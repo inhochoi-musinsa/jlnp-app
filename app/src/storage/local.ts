@@ -1,5 +1,5 @@
 import { IntegrityConflictError, type SyncEvent } from "./events";
-import type { LocalStore, StoredEvent, SyncStatus } from "./interface";
+import type { LocalStore, Snapshot, StoredEvent, SyncStatus } from "./interface";
 import type { ContentRecord } from "../../../shared/schema";
 
 export class MemoryStore implements LocalStore {
@@ -7,6 +7,10 @@ export class MemoryStore implements LocalStore {
   private events = new Map<string, StoredEvent>();
   private meta = new Map<string, unknown>();
   private content = new Map<string, ContentRecord>();
+  private snaps = new Map<string, Snapshot>();
+  async putSnapshot(s: Snapshot) { this.snaps.set(s.id, s); }
+  async listSnapshots() { return [...this.snaps.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt)); }
+  async deleteSnapshot(id: string) { this.snaps.delete(id); }
   async appendEvent(e: SyncEvent, status: SyncStatus = "PENDING") {
     const prev = this.events.get(e.eventId);
     if (prev) { if (prev.event.checksum !== e.checksum) throw new IntegrityConflictError(e.eventId); if (status === "SYNCED" && prev.status !== "SYNCED") prev.status = "SYNCED"; return "DUPLICATE" as const; }
@@ -24,24 +28,39 @@ export class MemoryStore implements LocalStore {
 }
 
 const DB_NAME = "jlpt-app";
-const DB_VERSION = 2;
+/** v1: events/meta. v2: + content. v3: + snapshots. Each step only adds a store, so no existing row is ever rewritten. */
+export const DB_VERSION = 3;
+const UPGRADES: Record<number, (db: IDBDatabase) => void> = {
+  1: (db) => { db.createObjectStore("events", { keyPath: "event.eventId" }).createIndex("status", "status"); db.createObjectStore("meta"); },
+  2: (db) => { db.createObjectStore("content"); },
+  3: (db) => { db.createObjectStore("snapshots", { keyPath: "id" }); },
+};
 const req = <T>(r: IDBRequest<T>): Promise<T> => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
 const done = (tx: IDBTransaction): Promise<void> => new Promise((res, rej) => { tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error ?? new Error("tx aborted")); });
 
 export class IndexedDbStore implements LocalStore {
   readonly kind = "indexeddb" as const;
+  /** The database version found on disk when an older one was upgraded (null: new database or already current). */
+  upgradedFrom: number | null = null;
   private constructor(private db: IDBDatabase) {}
 
   static async open(factory: IDBFactory = indexedDB, name = DB_NAME): Promise<IndexedDbStore> {
     const open = factory.open(name, DB_VERSION);
-    open.onupgradeneeded = () => {
+    let from: number | null = null;
+    open.onupgradeneeded = (ev) => {
       const db = open.result;
-      if (!db.objectStoreNames.contains("events")) db.createObjectStore("events", { keyPath: "event.eventId" }).createIndex("status", "status");
-      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta");
-      if (!db.objectStoreNames.contains("content")) db.createObjectStore("content");
+      const old = ev.oldVersion;
+      if (old > 0) from = old;
+      for (let v = old + 1; v <= DB_VERSION; v++) UPGRADES[v]?.(db);
     };
-    return new IndexedDbStore(await req(open));
+    const store = new IndexedDbStore(await req(open));
+    store.upgradedFrom = from;
+    return store;
   }
+
+  async putSnapshot(s: Snapshot) { const tx = this.db.transaction("snapshots", "readwrite"); tx.objectStore("snapshots").put(s); await done(tx); }
+  async listSnapshots() { return ((await req(this.db.transaction("snapshots").objectStore("snapshots").getAll())) as Snapshot[]).sort((a, b) => a.createdAt.localeCompare(b.createdAt)); }
+  async deleteSnapshot(id: string) { const tx = this.db.transaction("snapshots", "readwrite"); tx.objectStore("snapshots").delete(id); await done(tx); }
 
   async appendEvent(e: SyncEvent, status: SyncStatus = "PENDING") {
     const tx = this.db.transaction("events", "readwrite");
@@ -79,7 +98,7 @@ export class IndexedDbStore implements LocalStore {
     await done(tx);
   }
   async listContent() { return (await req(this.db.transaction("content").objectStore("content").getAll())) as ContentRecord[]; }
-  async clearAll() { const tx = this.db.transaction(["events", "meta", "content"], "readwrite"); tx.objectStore("events").clear(); tx.objectStore("meta").clear(); tx.objectStore("content").clear(); await done(tx); }
+  async clearAll() { const tx = this.db.transaction(["events", "meta", "content"], "readwrite"); tx.objectStore("events").clear(); tx.objectStore("meta").clear(); tx.objectStore("content").clear(); await done(tx); } // snapshots are kept on purpose
 }
 
 export interface StorageProbe { kind: "indexeddb" | "memory"; reason?: string }

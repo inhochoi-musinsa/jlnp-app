@@ -3,7 +3,7 @@ import { seedRecords } from "./content/seed";
 import { indexRecords } from "./domain/content";
 import { buildDiagnostic, diagnosticState, exposedContentIds, type DiagState } from "./domain/diagnostic";
 import type { UserSettings } from "./domain/settings";
-import { projectExamTarget, todayKey, type ExamTarget } from "./domain/target";
+import { projectExamTarget, targetConflict, targetHeads, todayKey, type ExamTarget, type TargetOption } from "./domain/target";
 import type { SyncEvent } from "./storage/events";
 import type { AppStorage } from "./storage/session";
 import { DOMAINS, makePlan, type Plan, type PlanDomain } from "./domain/planner";
@@ -31,6 +31,10 @@ export interface AppModel {
   byId: Map<string, ContentRecord>;
   events: SyncEvent[];
   examTarget: ExamTarget;
+  /** two devices chose different targets without seeing each other; the learner must pick one */
+  targetConflict: { options: TargetOption[]; headIds: string[] } | null;
+  /** head event ids a new target choice is based on */
+  targetHeadIds: string[];
   diag: DiagState;
   today: string;
   activeSecondsToday: number;
@@ -138,7 +142,7 @@ export async function loadModel(storage: AppStorage | undefined, settings: UserS
   const runway = computeRunway(pool, events, route, { unseenVocabWords: unseenItems(false), unseenGrammarPoints: unseenItems(true) });
   return {
     cards, cardStates: states, grammarStages, grammarPoints, kanaPairs: kanaPairs(pool).length, readingNext, readingToday, listeningNext, listeningToday, dictation: dictationItems(pool), review, secondsPerCard, newToday, vocabStages, vocab,
-    rows, records, pool, assessPool, readiness: computeReadiness(events, byId, settings.targetLevel, now, settings.timezone), flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), diag, today, activeSecondsToday,
+    rows, records, pool, assessPool, readiness: computeReadiness(events, byId, settings.targetLevel, now, settings.timezone), flags: fp.flagged, retired: fp.retired, runway, byId, events, examTarget: projectExamTarget(events, settings.targetLevel), targetConflict: targetConflict(events), targetHeadIds: targetHeads(events).map((h) => h.eventId), diag, today, activeSecondsToday,
     pending: storage ? (await storage.pendingCount()) : 0, plan, exposed, studyQuestions, notes,
   };
 }

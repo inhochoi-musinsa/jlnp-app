@@ -86,6 +86,40 @@ describe("AppStorage", () => {
     const stored = (await a.store.listEvents()).map((s) => s.event.deviceSeq);
     expect(new Set(stored).size).toBe(stored.length);
   });
+  it("a stored counter that lags behind the log is repaired on open (never reuse a sequence number)", async () => {
+    const f = new IDBFactory();
+    const a = await AppStorage.init(f);
+    for (let i = 0; i < 5; i++) await a.record("QUESTION_SUBMITTED", `q${i}`, { i });
+    const maxSeq = Math.max(...(await a.store.listEvents()).map((x) => x.event.deviceSeq));
+    await a.store.setMeta("deviceSeq", 2); // what an older build could leave behind
+    const b = await AppStorage.init(f);
+    const e = await b.record("QUESTION_SUBMITTED", "later", {});
+    expect(e.deviceSeq).toBe(maxSeq + 1);
+  });
+  it("recovery points: rotate to the newest 5, skip an empty or oversized log, restore only adds missing events", async () => {
+    const f = new IDBFactory();
+    const a = await AppStorage.init(f);
+    for (let i = 0; i < 6; i++) { await a.record("QUESTION_SUBMITTED", `q${i}`, { i }); await a.takeSnapshot("MANUAL", "t"); }
+    const snaps = await a.listSnapshots();
+    expect(snaps.length).toBe(5);
+    expect(snaps[snaps.length - 1]!.eventCount).toBe((await a.store.listEvents()).length);
+    expect(JSON.parse(snaps[0]!.backup).format).toBe("jlpt-backup");
+    const empty = await AppStorage.init(new IDBFactory(), );
+    await empty.store.clearAll();
+    expect(await empty.takeSnapshot("MANUAL", "t")).toBeNull();
+    const all = (await a.store.listEvents()).map((x) => x.event.eventId);
+    const r1 = await a.restoreSnapshot(snaps[snaps.length - 1]!.id, "t");
+    expect(r1.added).toBe(0);                                                     // nothing missing -> nothing added twice
+    expect((await a.store.listEvents()).length).toBe(all.length);
+    expect((await a.listSnapshots()).some((x) => x.reason === "BEFORE_RESTORE")).toBe(true);
+  });
+  it("a snapshot survives clearAll() (explicit deletion of the log must not erase the way back)", async () => {
+    const a = await AppStorage.init(new IDBFactory());
+    await a.record("QUESTION_SUBMITTED", "q", {});
+    const s = (await a.takeSnapshot("MANUAL", "t"))!;
+    await a.store.clearAll();
+    expect((await a.listSnapshots()).map((x) => x.id)).toContain(s.id);
+  });
   it("deviceSeq increases monotonically across reopen", async () => {
     const f = new IDBFactory();
     const a = await AppStorage.init(f);

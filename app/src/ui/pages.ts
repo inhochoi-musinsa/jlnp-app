@@ -18,7 +18,7 @@ import { RUNWAY_WARN_DAYS } from "../domain/progress";
 import { DOMAIN_LABEL, DOMAINS } from "../domain/planner";
 import { ROUTE_LABEL, DIAG_GROUPS } from "../domain/diagnostic";
 import { STAGE_NAME, STAGES, stageDistribution } from "../domain/srs";
-import { daysBetween, effectiveDate, eligibleDays, isPastSession, maximumRemainingMinutes } from "../domain/target";
+import { type TargetOption, daysBetween, effectiveDate, eligibleDays, isPastSession, maximumRemainingMinutes } from "../domain/target";
 
 export interface PageCtx {
   mode: RuntimeMode;
@@ -32,6 +32,7 @@ export interface PageCtx {
   planImport: (text: string, kinds: Kind[], forceAdd: Set<string>) => ImportReport | null;
   applyImport: (text: string, kinds: Kind[], forceAdd: Set<string>) => Promise<string>;
   exportPack: (o: { kinds: Kind[]; includeUnverified: boolean }) => number;
+  resolveTarget: (opt: TargetOption) => Promise<void>;
   recordOfficialResult: (r: { level: Level; year: number; month: number; sectionScores: Record<string, number>; passed: boolean | null }) => Promise<void>;
   exportProgress: () => void;
   exportFlags: () => number;
@@ -81,6 +82,7 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
   const m = ctx.model;
   root.append(h("h1", {}, "홈"));
   if (!m) { root.append(muted("불러오는 중입니다.")); return; }
+  if (m.targetConflict) root.append(targetConflictCard(m, ctx));
   // 1. 오늘의 60분
   if (m.diag.total > 0 && !m.diag.completed) {
     root.append(card("오늘의 60분",
@@ -116,6 +118,14 @@ export function renderHome(root: HTMLElement, ctx: PageCtx): void {
     ctx.conn?.state.kind === "READY" ? btn("지금 동기화", () => { void ctx.conn!.syncNow("manual"); }, "ghost", "sync-now") : null,
     st?.state === "NEEDS_AUTH" ? btn("다시 연결", () => { void ctx.conn!.reconnect(); }, "primary", "reconnect") : null,
     ctx.storage && !ctx.storage.persistent ? warn("현재 실행에서만 유지됨 — 백업 권장") : null));
+}
+
+const optLabel = (o: TargetOption) => `${o.level} ${o.year ?? "?"}년 ${MONTH_LABEL(o.month ?? 0)}`;
+function targetConflictCard(m: AppModel, ctx: PageCtx): HTMLElement {
+  const c = m.targetConflict!;
+  return h("section", { class: "card", id: "target-conflict", role: "alert" }, h("h2", {}, "목표가 기기마다 다르게 바뀌었습니다"),
+    muted("두 기기에서 서로 모르는 상태로 목표를 바꿨습니다. 기록은 하나도 지워지지 않았고, 어느 쪽을 쓸지 직접 골라야 합니다. 고르기 전에는 가장 나중에 바꾼 쪽으로 임시 계산합니다."),
+    h("ul", {}, ...c.options.map((o, i) => h("li", {}, `${optLabel(o)} — ${o.at.slice(0, 16).replace("T", " ")} UTC에 변경 (기기 ${o.deviceId.slice(0, 6)})`, " ", btn(`${optLabel(o)}로 확정`, () => { void ctx.resolveTarget(o); }, "primary", `resolve-target-${i}`)))));
 }
 
 function areaBlock(name: string, dist: Record<0 | 1 | 2 | 3 | 4, number> | null): HTMLElement {
@@ -387,10 +397,22 @@ function backupCard(ctx: PageCtx): HTMLElement {
       h("p", {}, `신규 ${p.newEvents}건 / 중복 ${p.duplicates}건 / 충돌 ${p.conflicts.length}건 / 거부 ${p.invalid.length}건`),
       ...(p.profileMismatch ? [warn("다른 프로필의 백업입니다. 병합하려면 확인이 필요합니다.")] : []),
       h("button", { class: "primary", type: "button", id: "apply-import", disabled: p.newEvents === 0, onclick: async () => {
+        await st.takeSnapshot("BEFORE_RESTORE", ctx.version).catch(() => null);
         const r = await applyImport(st.store, p);
         out.textContent = ""; out.append(h("p", {}, `${r.added}건을 추가했습니다. (동기화 전 상태입니다)`));
+        void drawSnapshots();
       } }, "가져오기 승인"));
   };
+  const snapBox = h("div", { id: "snapshot-list", "aria-live": "polite" });
+  const REASON: Record<string, string> = { MANUAL: "직접 만듦", BEFORE_RESTORE: "복원 직전 자동", AFTER_UPGRADE: "앱 업그레이드 시 자동" };
+  const drawSnapshots = async (): Promise<void> => {
+    const list = (await st.listSnapshots()).reverse();
+    snapBox.textContent = "";
+    if (!list.length) { snapBox.append(muted("복구 지점이 아직 없습니다.")); return; }
+    snapBox.append(h("ul", {}, ...list.map((x, i) => h("li", {}, `${x.createdAt.slice(0, 16).replace("T", " ")} UTC · ${REASON[x.reason] ?? x.reason} · 기록 ${x.eventCount}건${x.fromDbVersion ? ` · 저장소 v${x.fromDbVersion}에서 올림` : ""} `,
+      h("button", { class: "ghost", type: "button", id: `snapshot-restore-${i}`, onclick: async () => { const r = await st.restoreSnapshot(x.id, ctx.version); snapBox.append(h("p", { id: "snapshot-result" }, `${r.added}건을 다시 추가했습니다. 지워진 기록만 돌아오며 기존 기록은 그대로입니다.`)); } }, "이 지점에서 복원")))));
+  };
+  void drawSnapshots();
   const file = h("input", { type: "file", id: "import-file", accept: "application/json,.json", "aria-label": "백업 파일 선택", onchange: async (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0];
     if (f) showPreview(await previewImport(await f.text(), st.store, st.profileId));
@@ -404,7 +426,10 @@ function backupCard(ctx: PageCtx): HTMLElement {
       document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } }, "JSON 내보내기"),
     h("label", { for: "import-file" }, "백업 가져오기 "), file, out,
-    muted("백업에는 풀이 기록과 설정만 들어 있고 토큰·비밀번호는 포함되지 않습니다."));
+    muted("백업에는 풀이 기록과 설정만 들어 있고 토큰·비밀번호는 포함되지 않습니다."),
+    h("details", { id: "snapshots" }, h("summary", {}, "복구 지점 (이 기기 안에 자동 보관)"),
+      muted("앱을 올리거나 백업을 가져오기 직전에 자동으로 만들어지며 최근 5개만 남습니다. 기록이 3만 건을 넘으면 자동으로 만들지 않으니 JSON 내보내기를 쓰세요. 이 기기의 브라우저 데이터를 지우면 함께 사라집니다."),
+      h("button", { class: "ghost", type: "button", id: "snapshot-create", onclick: async () => { const r = await st.takeSnapshot("MANUAL", ctx.version); if (!r) snapBox.prepend(warn("기록이 없거나 너무 많아 복구 지점을 만들지 않았습니다. JSON 내보내기를 사용하세요.")); await drawSnapshots(); } }, "복구 지점 만들기"), snapBox));
 }
 
 function connectionCard(ctx: PageCtx): HTMLElement {

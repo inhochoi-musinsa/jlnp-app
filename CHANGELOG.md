@@ -2,6 +2,16 @@
 
 Sections: Added / Changed / Fixed / Migrated / Content / Compatibility / Known Issues
 
+## 4.0.0 (release candidate, not tagged)
+### Added
+- Local recovery points; stepwise IndexedDB upgrade to v3; two-device target conflict choice; `deviceSeq` repair; large-log tests.
+### Fixed
+- `.gitignore` excluded tools/, tests/content/ and app/src/content/ from all earlier commits.
+### Compatibility
+- Data written by v0.1.0 / v1.0.0 / T14 builds restores without loss (real fixtures). Sheet schema unchanged (1).
+### Known Issues
+- No `_JLPT_SNAPSHOTS` sheet tab (BLOCKED(GOOGLE)); mobile performance unmeasured.
+
 ## 3.0.0 (release candidate, not tagged)
 ### Added
 - Assessment sets (ASSESS pool isolated from learning), readiness (28 days, first exposure, n<20 자료 부족), SVG report, declared official results.

@@ -204,7 +204,12 @@ export function mount(root: HTMLElement, env: { protocol: string; hostname: stri
     startDemo: mode === "LOCALHOST_DEV" ? () => { location.hash = "#demo"; } : undefined,
     setTarget: async (level: Level, year: number, month: number) => {
       settings.set({ targetLevel: level });
-      await storage?.record("EXAM_TARGET_SELECTED", "exam", { level, year, month });
+      await storage?.record("EXAM_TARGET_SELECTED", "exam", { level, year, month, basedOn: model?.targetHeadIds ?? [] });
+      await refresh();
+    },
+    resolveTarget: async (opt) => {
+      settings.set({ targetLevel: opt.level });
+      await storage?.record("EXAM_TARGET_SELECTED", "exam", { level: opt.level, year: opt.year, month: opt.month, basedOn: model?.targetHeadIds ?? [], resolved: true });
       await refresh();
     },
     confirmDate: async (year, month, date, url) => { await storage?.record("EXAM_NOTICE_VERIFIED", "exam", { year, month, confirmedExamDate: date, sourceUrl: url }); await refresh(); },
