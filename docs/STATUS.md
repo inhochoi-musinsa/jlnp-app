@@ -12,7 +12,7 @@
 | T05 콘텐츠 CLI 최소판 | DONE | 16700f3 | 시드 팩 45항목 전부 VERIFIED(생성 claude-sonnet-5-5 ≠ 검증 claude-opus-5-5, headless, 모델명 resolved). 테스트 125 PASS |
 | T06 진단·목표·플랜 | DONE(PC Chrome headless) | 0080a9d | 28문항 진단·라우팅·재개, 목표 연도/월, 60분 플랜(청해 제외·재배분·분량 부족 표기). 단위 18+UI 6 PASS |
 | T07 Google 연동·동기화 | **BLOCKED(GOOGLE) — 실제 E2E 미수행** / 코드·가짜 API 테스트 DONE | 18a3ad3 | GIS·URL 파서·Sheets 어댑터·비파괴 초기화·배치 동기화(readback ACK)·증분 로딩·오류 매트릭스·UI 구현. 테스트 59(가짜 Google, 실제 Google 아님). 체크리스트: docs/qa/t07-real-e2e-checklist.md |
-| T08 팩 import/export·신고·진도 | DONE(시트 쓰기는 가짜 API로만 검증) | (T08) | IMP-01~11, 병합 규칙, 5,000항목 계획 0.3초·200행 배치 25회, 신고·flags.json, progress.json(개인정보 0), 런웨이. 테스트 241 PASS |
+| T08 팩 import/export·신고·진도 | DONE(시트 쓰기는 가짜 API로만 검증) | bd48ed5 | IMP-01~11, 병합 규칙, 5,000항목 계획 0.3초·200행 배치 25회, 신고·flags.json, progress.json(개인정보 0), 런웨이. 테스트 241 PASS |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
