@@ -20,7 +20,7 @@
 | T13 독해 UI | DONE(PC Chrome headless) | 28dc963 | 지문 원본 페이지 구분 유지·페이징, 고정 문제줄+보기 4개, 해설에서 지문/해설 전환, 하루 새 지문 1개, 런웨이·플랜·진도 반영, stimulusId 노출 기록. 3뷰포트×4글자크기×3지문 유형 한 화면 검증 |
 | T14 청해·오디오 | DONE(PC Chrome headless; TTS는 macos-say 로컬 확인) / BLOCKED(TTS: 실제 Google 합성), BLOCKED(DEVICE: Android 재생) | a2c581c | 재생기(녹음 오버라이드>생성 파일>브라우저 음성, 재생 횟수, 소스 배지, TTS 한계 문구), 오디오 패널·스크립트/다시 듣기, 듣고 쓰기, 청해 하루 2개·런웨이, `content:audio`. 실제 headless 생성·검증 청해 1문항을 macos-say로 합성해 Chrome 재생 확인(로컬 전용, 게시 금지). 청해 수정(revise) 시 음원 키가 깨지던 버그 수정 |
 | T15 콘텐츠 런 2 | BLOCKED(COST: 호출 상한 미승인), BLOCKED(TTS: 실제 Google 합성 키 없음) | - | 독해 10 지문·청해 40 생성은 T12와 같은 headless 호출 상한 승인이 필요하다. 청해 1문항만 로컬 스모크(macos-say, 게시 금지)로 생성·검증·재생 확인 |
-| T16 평가·준비도·리포트 | DONE(PC Chrome headless) / BLOCKED(COST: 평가 문항 영역당 60) | (커밋 후 기입) | 실전 세트(ASSESS 풀 격리·신규 노출만), 준비도(28일·첫 노출·정답 미공개·청해 음원 유효, n 0/<20/≥20/≥30 분기, 상대 취약), SVG 리포트(학습 시간·숙련도·영역 정답률), TTS 배지·음원 구성, 공식 결과 직접 입력. 확률·예상 점수 문구 0회(테스트). 부수 수정: deviceSeq 중복, 퀴즈 직후 모델 지연, 청해 수정 시 음원 키 소실 |
+| T16 평가·준비도·리포트 | DONE(PC Chrome headless) / BLOCKED(COST: 평가 문항 영역당 60) | ebe9395 | 실전 세트(ASSESS 풀 격리·신규 노출만), 준비도(28일·첫 노출·정답 미공개·청해 음원 유효, n 0/<20/≥20/≥30 분기, 상대 취약), SVG 리포트(학습 시간·숙련도·영역 정답률), TTS 배지·음원 구성, 공식 결과 직접 입력. 확률·예상 점수 문구 0회(테스트). 부수 수정: deviceSeq 중복, 퀴즈 직후 모델 지연, 청해 수정 시 음원 키 소실 |
 
 ## BLOCKED / 미확인 목록
 - T00⑨ 저장소 게이트 측정: BLOCKED(DEVICE: Android Chrome, GOOGLE: Client ID·HTTPS Origin·테스트 시트)
