@@ -5,7 +5,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const LEVEL_RE = /(?<![A-Za-z0-9])N[1-5](?![A-Za-z0-9])/g;
-export const ALLOWED = [/^shared\/examSpec\.ts$/, /^tools\/content\/targets\//];
+export const ALLOWED = [/^shared\/examSpec\.ts$/, /^tools\/content\/targets\//, /^app\/seed\//]; // content data, not source
 const SCAN_DIRS = ["app", "shared", "tools"];
 const EXT = /\.(ts|js|mjs|json|css|html|md)$/;
 

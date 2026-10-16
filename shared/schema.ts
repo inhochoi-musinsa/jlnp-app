@@ -22,7 +22,7 @@ export interface Provenance {
   generatorModel?: string; llmProvider?: string; resolved?: boolean; runId?: string; promptVersion?: string; createdAt: string;
 }
 export interface Verification {
-  status: VerificationStatus; selfAttested: boolean; verifierModel?: string; rounds?: number; checks: Check[]; verifiedAt?: string;
+  status: VerificationStatus; selfAttested: boolean; verifierModel?: string; verifierProvider?: string; verifierResolved?: boolean; rounds?: number; checks: Check[]; verifiedAt?: string;
 }
 export interface ContentRecord {
   contentId: string; contentVersion: number; kind: Kind; level: Level; pool: Pool; tags: string[];

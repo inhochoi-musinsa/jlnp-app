@@ -378,6 +378,25 @@ config.local.json         (깃에 올라가지 않음)
 
 ---
 
+### 5.4.1 개별 명령 (수동으로 한 단계씩 실행할 때)
+
+`content:fill`(자동 순환, v1.0.0 작업에서 제공) 대신 단계를 직접 실행할 수 있다. 모든 명령은 저장소 루트에서 `npm run <이름> -- <옵션>` 형태로 쓴다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `content:doctor` | Claude 연동(API / headless)과 TTS 키를 점검하고, 쓸 수 있는 방식을 알려 준다. |
+| `content:gen -- --kind VOCAB --count 20 --dry-run` | 생성 없이 **예상 호출 수**(API 방식이면 예상 비용도)만 출력한다. `--dry-run`을 빼면 초안을 만든다. 옵션: `--level`, `--pool LEARN|DIAG|ASSESS`, `--topic`, `--domain`, `--provider api|headless`, `--max-usd`, `--max-calls` |
+| `content:verify -- --run <실행ID>` | 초안을 자동 검증한다(스키마·읽기·블라인드 풀이·오답 점검·품질·중복). 중간에 멈췄다면 같은 명령을 다시 실행하면 **이어서** 진행한다. |
+| `content:verify -- --pack <팩 파일>` | 팩의 해시·개수 무결성을 점검한다. |
+| `content:pack -- --run <실행ID> --out packs/<이름>.jlptpack.json` | 검증을 통과한 항목만 팩으로 묶는다. |
+| `content:ledger -- --from-pack <전체 내보내기 파일>` | 중복 장부(`content/ledger.json`)를 다시 만든다. |
+| `content:catalog` | 장기 목표 대비 부족분을 보여 준다. |
+| `content:sample -- --n 20` | 사람이 훑어볼 표본을 `content/sample.md`로 만든다(필수 아님). |
+| `content:seed` | 앱에 내장되는 시드(진단 28문항 등)를 만든다. 개발자용. |
+
+- 실행 결과는 `content/runs/<실행ID>/`에 쌓인다(`drafts` → `verified` / `rejected` / `unverified` / `duplicates`). 이 폴더는 깃에 올라가지 않는다.
+- 생성 모델과 검증 모델이 서로 다른 것으로 **확인되지 않으면** 항목은 `unverified`로 나뉘고 팩에 들어가지 않는다.
+
 ### 5.5 Claude 연동 방식 선택 가이드
 
 | 구분 | API 방식 | headless 방식 |

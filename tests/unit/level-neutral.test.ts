@@ -11,6 +11,7 @@ const ok: [string, string][] = [
   ["const HN3 = 1; // identifier containing the letters is fine", "app/src/c.ts"],
   ["// ordinary comment about levels", "shared/lint.ts"],
   ["const BN1X = 'x'", "tools/content/src/d.ts"],
+  ['{ "level": "N3" }', "app/seed/seed.jlptpack.json"],
 ];
 const bad: [string, string][] = [
   ["const level = 'N3';", "app/src/a.ts"],
